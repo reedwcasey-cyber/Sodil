@@ -34,52 +34,295 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-/* Global */
+/* ── Global ──────────────────────────────────────────────────────────────── */
 #MainMenu, footer, header { visibility: hidden; }
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px; }
+*, *::before, *::after { box-sizing: border-box; }
 
-/* Position cards */
+/* ── Typography scale ────────────────────────────────────────────────────── */
+/* Enforce max font sizes so nothing overflows columns */
+h1, h2, h3, h4, h5, h6 { line-height: 1.2; }
+p, span, div { max-width: 100%; }
+
+/* ── Truncation utilities ─────────────────────────────────────────────────── */
+.truncate-1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.45;
+}
+.clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.45;
+}
+
+/* ── Position / Rec cards ────────────────────────────────────────────────── */
 .pos-card {
     background: #131929;
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 12px;
-    padding: 16px 18px;
+    padding: 14px 16px;
     margin-bottom: 8px;
     transition: border-color 0.2s;
+    min-width: 0;        /* allow flex children to shrink */
+    overflow: hidden;
 }
 .pos-card:hover { border-color: rgba(0,212,170,0.4); }
-.pos-sym  { font-size: 1.1rem; font-weight: 700; color: #fff; }
-.pos-name { font-size: 0.75rem; color: #8892a4; margin-bottom: 6px; }
-.pos-price { font-size: 1.3rem; font-weight: 700; color: #fff; }
-.pos-ret-pos { font-size: 0.85rem; color: #00d4aa; font-weight: 600; }
-.pos-ret-neg { font-size: 0.85rem; color: #ff5566; font-weight: 600; }
-.pos-meta  { font-size: 0.75rem; color: #8892a4; margin-top: 4px; }
 
-/* KPI metric */
+.pos-sym {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80px;
+}
+.pos-name {
+    font-size: 0.72rem;
+    color: #8892a4;
+    margin-bottom: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+}
+.pos-price { font-size: 1.15rem; font-weight: 700; color: #fff; white-space: nowrap; }
+.pos-ret-pos { font-size: 0.8rem; color: #00d4aa; font-weight: 600; white-space: nowrap; }
+.pos-ret-neg { font-size: 0.8rem; color: #ff5566; font-weight: 600; white-space: nowrap; }
+.pos-meta  { font-size: 0.72rem; color: #8892a4; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Card inner flex rows must not overflow */
+.card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    min-width: 0;
+    gap: 8px;
+}
+.card-row > div { min-width: 0; }
+
+/* Rec card score number */
+.rec-score {
+    font-size: 1.25rem;
+    font-weight: 800;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Card rationale — 2-line clamp */
+.card-rationale {
+    font-size: 0.75rem;
+    color: #8892a4;
+    line-height: 1.45;
+    margin-top: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ── KPI metric containers ───────────────────────────────────────────────── */
 div[data-testid="metric-container"] {
     background: #131929;
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 10px;
-    padding: 14px 18px;
+    padding: 12px 14px;
+    overflow: hidden;
+    min-width: 0;
+}
+/* Prevent metric labels from overflowing */
+div[data-testid="metric-container"] label {
+    font-size: 0.72rem !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    display: block;
+}
+div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-size: 1.1rem !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Tab font */
-div[data-testid="stTabs"] button { font-size: 0.9rem; font-weight: 600; letter-spacing: 0.01em; }
+/* ── Tab font ────────────────────────────────────────────────────────────── */
+div[data-testid="stTabs"] button {
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
 
-/* Signal badge */
-.badge-bull { display:inline-block; background:rgba(0,212,170,0.15); color:#00d4aa;
-              border:1px solid rgba(0,212,170,0.3); border-radius:6px; padding:2px 8px;
-              font-size:0.78rem; font-weight:600; }
-.badge-bear { display:inline-block; background:rgba(255,85,102,0.15); color:#ff5566;
-              border:1px solid rgba(255,85,102,0.3); border-radius:6px; padding:2px 8px;
-              font-size:0.78rem; font-weight:600; }
-.badge-neutral { display:inline-block; background:rgba(255,170,0,0.15); color:#ffaa00;
-                  border:1px solid rgba(255,170,0,0.3); border-radius:6px; padding:2px 8px;
-                  font-size:0.78rem; font-weight:600; }
+/* ── Signal badges ───────────────────────────────────────────────────────── */
+.badge-bull {
+    display: inline-block;
+    background: rgba(0,212,170,0.15);
+    color: #00d4aa;
+    border: 1px solid rgba(0,212,170,0.3);
+    border-radius: 5px;
+    padding: 2px 7px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+.badge-bear {
+    display: inline-block;
+    background: rgba(255,85,102,0.15);
+    color: #ff5566;
+    border: 1px solid rgba(255,85,102,0.3);
+    border-radius: 5px;
+    padding: 2px 7px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+.badge-neutral {
+    display: inline-block;
+    background: rgba(255,170,0,0.15);
+    color: #ffaa00;
+    border: 1px solid rgba(255,170,0,0.3);
+    border-radius: 5px;
+    padding: 2px 7px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+/* Badge row: always wraps — never overflows card */
+.badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+    overflow: hidden;
+}
 
-/* Score bar */
-.score-bar-wrap { background:#1e2130; border-radius:6px; height:8px; width:100%; overflow:hidden; }
-.score-bar      { height:8px; border-radius:6px; }
+/* ── Score bar ───────────────────────────────────────────────────────────── */
+.score-bar-wrap {
+    background: #1e2130;
+    border-radius: 5px;
+    height: 6px;
+    width: 100%;
+    overflow: hidden;
+}
+.score-bar { height: 6px; border-radius: 5px; }
+
+/* ── AI thesis box ───────────────────────────────────────────────────────── */
+.thesis-box {
+    max-height: 460px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    word-break: break-word;
+    line-height: 1.65;
+    font-size: 0.9rem;
+    color: #e8eaf0;
+    border-radius: 12px;
+    padding: 18px 20px;
+}
+/* Scrollbar styling */
+.thesis-box::-webkit-scrollbar { width: 4px; }
+.thesis-box::-webkit-scrollbar-track { background: transparent; }
+.thesis-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+
+/* ── Price / equity headers ──────────────────────────────────────────────── */
+.equity-num {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -1px;
+    line-height: 1;
+}
+.price-num {
+    font-size: clamp(1.3rem, 2.5vw, 2rem);
+    font-weight: 800;
+    color: #fff;
+    white-space: nowrap;
+}
+.price-chg {
+    font-size: clamp(0.85rem, 1.5vw, 1.05rem);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.stock-name-header {
+    font-size: 0.9rem;
+    color: #8892a4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    margin-bottom: 2px;
+}
+
+/* ── Info / edge boxes ───────────────────────────────────────────────────── */
+div[data-testid="stAlert"] {
+    overflow: hidden;
+}
+div[data-testid="stAlert"] p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Quant Lab stock header ──────────────────────────────────────────────── */
+.lab-header {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 18px;
+    min-width: 0;
+}
+.lab-sym  { font-size: 1.3rem; font-weight: 800; color: #fff; flex-shrink: 0; }
+.lab-name {
+    font-size: 0.88rem;
+    color: #8892a4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 280px;
+    flex-shrink: 1;
+}
+.lab-price { font-size: 1.3rem; font-weight: 700; color: #fff; flex-shrink: 0; white-space: nowrap; }
+
+/* ── Probability panel ───────────────────────────────────────────────────── */
+.prob-panel {
+    background: #131929;
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.prob-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    gap: 8px;
+}
+.prob-label { font-size: 0.78rem; color: #c8d0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prob-val   { font-size: 0.78rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+
+/* ── Streamlit column overflow guard ─────────────────────────────────────── */
+[data-testid="column"] { min-width: 0; overflow: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -728,21 +971,23 @@ def _position_card(pos: dict) -> None:
     mktval = pos.get("market_value", 0)
     ret_class = "pos-ret-pos" if ret_pct >= 0 else "pos-ret-neg"
     day_class = "pos-ret-pos" if day_ret >= 0 else "pos-ret-neg"
+    # Truncate long company names at display level
+    display_name = name if len(name) <= 22 else name[:20] + "…"
     st.markdown(f"""
     <div class="pos-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>
+      <div class="card-row">
+        <div style="min-width:0;flex:1;">
           <div class="pos-sym">{sym}</div>
-          <div class="pos-name">{name}</div>
+          <div class="pos-name" title="{name}">{display_name}</div>
         </div>
-        <div style="text-align:right;">
+        <div style="text-align:right;flex-shrink:0;">
           <div class="pos-price">${price:,.2f}</div>
           <div class="{day_class}">Today: {fmt_pct(day_ret)}</div>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:10px;">
-        <div class="pos-meta">{qty:.0f} shares · ${mktval:,.0f}</div>
-        <div class="{ret_class}">{fmt_pct(ret_pct)} ({fmt_dollar(total_ret)})</div>
+      <div class="card-row" style="margin-top:8px;">
+        <div class="pos-meta">{qty:.0f} sh · ${mktval:,.0f}</div>
+        <div class="{ret_class}" style="text-align:right;">{fmt_pct(ret_pct)}&nbsp;({fmt_dollar(total_ret)})</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -755,28 +1000,37 @@ def _rec_card(rec: pd.Series, col_idx: int) -> None:
     price = rec.get("current_price", 0)
     rsi = rec.get("rsi", 50)
     trend = str(rec.get("trend", ""))
-    rationale = rec.get("rationale", "")
+    rationale = str(rec.get("rationale", ""))
     mom = rec.get("momentum_20d", 0)
     color = GREEN if score >= 65 else AMBER if score >= 45 else RED
+    display_name = name if len(name) <= 20 else name[:18] + "…"
+    mom_cls = "badge-bull" if mom >= 0 else "badge-bear"
+    mom_arrow = "▲" if mom >= 0 else "▼"
+    # Truncate rationale beyond 120 chars — tooltip shows full text
+    short_rat = rationale if len(rationale) <= 120 else rationale[:117] + "…"
     st.markdown(f"""
     <div class="pos-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
-        <div>
+      <div class="card-row" style="margin-bottom:6px;">
+        <div style="min-width:0;flex:1;">
           <div class="pos-sym">{sym}</div>
-          <div class="pos-name">{name}</div>
+          <div class="pos-name" title="{name}">{display_name}</div>
         </div>
-        <div style="text-align:right;color:{color};font-size:1.4rem;font-weight:800;">{score:.0f}</div>
+        <div class="rec-score" style="color:{color};">{score:.0f}</div>
       </div>
       {score_html(score)}
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="badge-row">
         {trend_badge(trend)}
         <span class="badge-neutral">RSI {rsi:.0f}</span>
-        <span class="{'badge-bull' if mom >= 0 else 'badge-bear'}">{'▲' if mom >= 0 else '▼'} {abs(mom):.1f}%</span>
+        <span class="{mom_cls}">{mom_arrow} {abs(mom):.1f}%</span>
       </div>
-      <div style="margin-top:8px;font-size:0.78rem;color:#8892a4;line-height:1.4;">{rationale}</div>
-      <div style="margin-top:6px;font-size:0.85rem;color:#c8d0e0;">${price:,.2f}</div>
+      <div class="card-rationale" title="{rationale}">{short_rat}</div>
+      <div style="margin-top:6px;font-size:0.82rem;color:#c8d0e0;font-weight:600;">${price:,.2f}</div>
     </div>
     """, unsafe_allow_html=True)
+    # Expand icon if rationale is long
+    if len(rationale) > 120:
+        with st.expander("ℹ️ Full rationale"):
+            st.caption(rationale)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -861,15 +1115,18 @@ tab_home, tab_research, tab_trades, tab_opps, tab_lab, tab_ai = st.tabs([
 with tab_home:
     if not st.session_state.data_loaded:
         st.markdown("""
-        ### Welcome to Sodil
-
-        The smarter way to understand your trades and find your next move.
-
-        **To get started:**
-        1. Choose **Demo** (top right) to explore with sample data — no credentials needed
-        2. Click **Load Demo Data** in the sidebar
-        3. Explore your portfolio, research stocks, and ask the AI anything
-        """)
+        <div style="max-width:520px;padding:32px 0 8px;">
+          <div style="font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:6px;">Welcome to Sodil</div>
+          <div style="font-size:0.88rem;color:#8892a4;line-height:1.6;margin-bottom:18px;">
+            The smarter way to understand your trades and find your next move.
+          </div>
+          <div style="font-size:0.82rem;color:#c8d0e0;line-height:2;">
+            <b style="color:#00d4aa;">1.</b>&nbsp; Choose <b>Demo</b> (top right) — no credentials needed<br>
+            <b style="color:#00d4aa;">2.</b>&nbsp; Click <b>Load Demo Data</b> in the sidebar<br>
+            <b style="color:#00d4aa;">3.</b>&nbsp; Explore, research stocks, and ask the AI anything
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         p = st.session_state.portfolio or {}
         pos_df = st.session_state.positions
@@ -880,11 +1137,10 @@ with tab_home:
         ret_pct = p.get("total_return_pct", 0)
         ret_color = GREEN if ret_pct >= 0 else RED
         st.markdown(f"""
-        <div style="margin-bottom:20px;">
-          <div style="font-size:2.8rem;font-weight:800;color:#fff;letter-spacing:-1px;">
-            ${equity:,.2f}
-          </div>
-          <div style="font-size:1.1rem;color:{ret_color};font-weight:600;">
+        <div style="margin-bottom:18px;">
+          <div style="font-size:0.75rem;color:#8892a4;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px;">Portfolio Value</div>
+          <div class="equity-num">${equity:,.2f}</div>
+          <div style="font-size:0.9rem;color:{ret_color};font-weight:600;margin-top:3px;">
             {fmt_pct(ret_pct)} total return
           </div>
         </div>
@@ -999,12 +1255,13 @@ with tab_research:
             chg_color = GREEN if is_pos else RED
             name = info.get("longName") or info.get("shortName") or symbol
 
+            display_name = name if len(name) <= 40 else name[:38] + "…"
             st.markdown(f"""
-            <div style="margin-bottom:16px;">
-              <div style="font-size:1.2rem;color:#8892a4;margin-bottom:2px;">{name}</div>
-              <div style="display:flex;align-items:baseline;gap:16px;">
-                <span style="font-size:2.2rem;font-weight:800;color:#fff;">${cur_price:,.2f}</span>
-                <span style="font-size:1.1rem;font-weight:600;color:{chg_color};">
+            <div style="margin-bottom:14px;min-width:0;">
+              <div class="stock-name-header" title="{name}">{display_name}</div>
+              <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:10px;">
+                <span class="price-num">${cur_price:,.2f}</span>
+                <span class="price-chg" style="color:{chg_color};">
                   {'+' if chg >= 0 else ''}{chg:,.2f} ({chg_pct:+.2f}%) {period_label}
                 </span>
               </div>
@@ -1023,13 +1280,12 @@ with tab_research:
                 t1, t2, t3, t4, t5, t6 = st.columns(6)
 
                 rsi_val = techs.get("rsi", 50)
-                rsi_col = GREEN if rsi_val < 40 else RED if rsi_val > 70 else "#fff"
-                t1.metric("RSI (14)", f"{rsi_val:.1f}")
+                t1.metric("RSI 14", f"{rsi_val:.1f}", help="<30 oversold, >70 overbought")
                 t2.metric("Trend", techs.get("trend", "—"))
-                t3.metric("20d Momentum", f"{techs.get('momentum_20d', 0):+.1f}%")
-                t4.metric("MACD", "Bullish ✓" if techs.get("macd_bullish") else "Bearish ✗")
-                t5.metric("Volatility", f"{techs.get('volatility_20d', 0):.1f}%")
-                t6.metric("Price vs SMA50", "Above ▲" if techs.get("above_sma50") else "Below ▼")
+                t3.metric("20d Mom.", f"{techs.get('momentum_20d', 0):+.1f}%", help="20-day price momentum")
+                t4.metric("MACD", "Bull ✓" if techs.get("macd_bullish") else "Bear ✗", help="MACD histogram signal")
+                t5.metric("Vol. 20d", f"{techs.get('volatility_20d', 0):.1f}%", help="20-day annualised volatility")
+                t6.metric("vs SMA50", "Above ▲" if techs.get("above_sma50") else "Below ▼", help="Price vs 50-day moving average")
 
                 # Signal badges
                 signals = []
@@ -1184,10 +1440,22 @@ with tab_trades:
             st.divider()
             st.markdown("##### Your Statistical Edge")
             e1, e2, e3, e4 = st.columns(4)
-            e1.info(f"**Best Sector**\n\n{edge.get('best_sector','—')}")
-            e2.info(f"**Best Hold Duration**\n\n{edge.get('best_hold_duration','—')}")
-            e3.info(f"**Best RSI Entry**\n\n{edge.get('best_rsi_band','—')}")
-            e4.info(f"**Best Market Cap**\n\n{edge.get('best_market_cap','—')}")
+            def _edge_box(col, label: str, value: str) -> None:
+                short_val = value if len(value) <= 20 else value[:18] + "…"
+                col.markdown(f"""
+                <div style="background:#131929;border:1px solid rgba(255,255,255,0.08);
+                            border-radius:8px;padding:12px 14px;overflow:hidden;">
+                  <div style="font-size:0.68rem;color:#8892a4;font-weight:700;letter-spacing:0.06em;
+                              text-transform:uppercase;margin-bottom:4px;">{label}</div>
+                  <div style="font-size:0.9rem;color:#c8d0e0;font-weight:600;overflow:hidden;
+                              text-overflow:ellipsis;white-space:nowrap;" title="{value}">{short_val}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            _edge_box(e1, "Best Sector",       str(edge.get("best_sector", "—")))
+            _edge_box(e2, "Best Hold Duration", str(edge.get("best_hold_duration", "—")))
+            _edge_box(e3, "Best RSI Entry",     str(edge.get("best_rsi_band", "—")))
+            _edge_box(e4, "Best Market Cap",    str(edge.get("best_market_cap", "—")))
 
             pr = stats.get("patience_ratio", 1.0)
             if pr >= 1.2:
@@ -1436,35 +1704,37 @@ with tab_lab:
         cur = res["current_price"]
 
         # ── Header ────────────────────────────────────────────────────────────
+        display_lab_name = name if len(name) <= 36 else name[:34] + "…"
         st.markdown(f"""
-        <div style="margin:12px 0 20px;">
-          <span style="font-size:1.5rem;font-weight:800;color:#fff;">{sym}</span>
-          <span style="font-size:1rem;color:#8892a4;margin-left:10px;">{name}</span>
-          <span style="font-size:1.5rem;font-weight:700;color:#fff;margin-left:16px;">${cur:,.2f}</span>
+        <div class="lab-header">
+          <span class="lab-sym">{sym}</span>
+          <span class="lab-name" title="{name}">{display_lab_name}</span>
+          <span class="lab-price">${cur:,.2f}</span>
         </div>
         """, unsafe_allow_html=True)
 
-        # ── KPI row ────────────────────────────────────────────────────────────
-        k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-
+        # ── KPI rows — split 4+3 to prevent cramping ──────────────────────────
         hurst_val = res["hurst"]
         if hurst_val > 0.58:
-            hurst_label, hurst_color = f"Trending ({hurst_val:.2f})", GREEN
+            hurst_label = f"Trending ({hurst_val:.2f})"
         elif hurst_val < 0.42:
-            hurst_label, hurst_color = f"Mean-Rev ({hurst_val:.2f})", AMBER
+            hurst_label = f"Mean-Rev ({hurst_val:.2f})"
         else:
-            hurst_label, hurst_color = f"Random ({hurst_val:.2f})", "#8892a4"
+            hurst_label = f"Random ({hurst_val:.2f})"
 
         entry_val = res["entry_score"]
-        entry_color = GREEN if entry_val >= 65 else AMBER if entry_val >= 45 else RED
 
-        k1.metric("Hurst Exponent", hurst_label, help=res["regime_note"])
-        k2.metric("Sharpe Ratio", f"{res['sharpe']:.2f}", help="Risk-adjusted return vs 5% risk-free rate")
-        k3.metric("Ann. Volatility", f"{res['sigma_annual_pct']:.0f}%")
-        k4.metric("VaR 95% (daily)", f"-{res['var_95_pct']:.1f}%", help="Expected max daily loss 19/20 days")
-        k5.metric("Entry Score", f"{entry_val:.0f}/100", help="RSI + MACD + Bollinger + Trend fusion")
-        k6.metric("P(Profit)", f"{res['prob_profit']:.0f}%", help=f"Probability above current price in {horizon_label}")
-        k7.metric("Expected Return", f"{res['expected_return_pct']:+.1f}%", help="Monte Carlo mean outcome")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Hurst", hurst_label, help=f"Fractal regime: {res['regime_note']}")
+        k2.metric("Sharpe", f"{res['sharpe']:.2f}", help="Risk-adjusted return vs 5% risk-free rate")
+        k3.metric("Sortino", f"{res['sortino']:.2f}", help="Downside-only risk ratio")
+        k4.metric("Ann. Volatility", f"{res['sigma_annual_pct']:.0f}%", help="Annualised price volatility")
+
+        k5, k6, k7, k8 = st.columns(4)
+        k5.metric("VaR 95%", f"-{res['var_95_pct']:.1f}%", help="Max expected daily loss, 19/20 days")
+        k6.metric("Entry Score", f"{entry_val:.0f} / 100", help="RSI + MACD + Bollinger + Trend fusion")
+        k7.metric("P(Profit)", f"{res['prob_profit']:.0f}%", help=f"Probability above current price in {horizon_label}")
+        k8.metric("Exp. Return", f"{res['expected_return_pct']:+.1f}%", help="Monte Carlo mean outcome")
 
         st.divider()
 
@@ -1707,25 +1977,25 @@ with tab_lab:
             fig_hist.update_layout(**_base_layout(margin=dict(t=16, b=8, l=8, r=8)))
             st.plotly_chart(fig_hist, use_container_width=True, config={"displayModeBar": False})
 
-            # Probability breakdown
+            # Probability breakdown — using tightly-controlled CSS classes
             st.markdown(f"""
-            <div style="background:#131929;border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,0.08);">
-              <div style="font-size:0.8rem;color:#8892a4;margin-bottom:8px;font-weight:600;">PROBABILITY BREAKDOWN</div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                <span style="color:#c8d0e0;">Profit (any gain)</span>
-                <span style="color:{GREEN};font-weight:700;">{res['prob_profit']:.0f}%</span>
+            <div class="prob-panel">
+              <div style="font-size:0.68rem;color:#8892a4;margin-bottom:10px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;">Probability Breakdown</div>
+              <div class="prob-row">
+                <span class="prob-label">Any profit</span>
+                <span class="prob-val" style="color:{GREEN};">{res['prob_profit']:.0f}%</span>
               </div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                <span style="color:#c8d0e0;">+10% or more</span>
-                <span style="color:{GREEN};font-weight:700;">{res['prob_10pct']:.0f}%</span>
+              <div class="prob-row">
+                <span class="prob-label">+10% or more</span>
+                <span class="prob-val" style="color:{GREEN};">{res['prob_10pct']:.0f}%</span>
               </div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                <span style="color:#c8d0e0;">+20% or more</span>
-                <span style="color:{GREEN};font-weight:700;">{res['prob_20pct']:.0f}%</span>
+              <div class="prob-row">
+                <span class="prob-label">+20% or more</span>
+                <span class="prob-val" style="color:{GREEN};">{res['prob_20pct']:.0f}%</span>
               </div>
-              <div style="display:flex;justify-content:space-between;">
-                <span style="color:#c8d0e0;">Loss of 20%+</span>
-                <span style="color:{RED};font-weight:700;">{res['prob_loss_20']:.0f}%</span>
+              <div class="prob-row" style="margin-bottom:0;">
+                <span class="prob-label">Loss &gt;20%</span>
+                <span class="prob-val" style="color:{RED};">{res['prob_loss_20']:.0f}%</span>
               </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1804,7 +2074,6 @@ Be specific, use numbers, be direct. No disclaimers. Max 250 words total."""
 
             if st.session_state.get("lab_ai_analysis"):
                 verdict_text = st.session_state.lab_ai_analysis
-                # Color the verdict line
                 if "BUY" in verdict_text[:200]:
                     box_color = "rgba(0,212,170,0.1)"
                     border_color = "rgba(0,212,170,0.3)"
@@ -1815,23 +2084,24 @@ Be specific, use numbers, be direct. No disclaimers. Max 250 words total."""
                     box_color = "rgba(255,170,0,0.08)"
                     border_color = "rgba(255,170,0,0.25)"
 
+                # thesis-box class provides max-height + scrollbar + word-break
+                import html as _html
+                safe_text = _html.escape(verdict_text).replace("\n", "<br>")
                 st.markdown(f"""
-                <div style="background:{box_color};border:1px solid {border_color};
-                            border-radius:12px;padding:20px;line-height:1.7;
-                            font-size:0.95rem;color:#e8eaf0;white-space:pre-wrap;">
-{verdict_text}
+                <div class="thesis-box" style="background:{box_color};border:1px solid {border_color};">
+{safe_text}
                 </div>
                 """, unsafe_allow_html=True)
 
-                if st.button("Regenerate Analysis", key="lab_regen"):
+                if st.button("↺ Regenerate", key="lab_regen"):
                     st.session_state.lab_ai_analysis = None
                     st.session_state.lab_auto_ai = True
                     st.rerun()
             else:
                 st.markdown("""
                 <div style="background:#131929;border:1px dashed rgba(255,255,255,0.15);
-                            border-radius:12px;padding:20px;text-align:center;color:#8892a4;">
-                Click <strong style="color:#00d4aa;">Generate AI Thesis</strong> for a full investment analysis
+                            border-radius:12px;padding:18px;text-align:center;color:#8892a4;font-size:0.88rem;">
+                  Click <strong style="color:#00d4aa;">Generate AI Thesis</strong> for a structured investment analysis
                 </div>
                 """, unsafe_allow_html=True)
 
