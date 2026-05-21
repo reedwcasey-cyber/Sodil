@@ -1460,7 +1460,7 @@ def _baker_deep_dive(ticker: str, data: dict, baker_invest: float, horizon_label
     score = data.get("composite_score", 0.0)
     signal, sig_cls = _baker_signal(score)
     cur = data.get("current_price", 0.0)
-    hist_b = data.get("baker_hist")
+    hist_b = _baker_synthetic_hist(ticker)
 
     st.markdown(f"""
 <div class="deep-dive-banner">
@@ -2947,19 +2947,25 @@ with tab_baker:
                            horizon_days=baker_horizon, n_paths=3000, beta=stock_beta)
                 if res:
                     comp = baker_composite_score(res, holding["weight_pct"])
+                    # Drop raw paths (5.8 MB each!) — store only derived stats.
+                    # percentiles/final_returns/scenarios are all pre-computed; paths
+                    # not needed for rendering. baker_hist regenerated on demand.
+                    compact = {k: v for k, v in res.items() if k != "paths"}
                     st.session_state.baker_results[tkr] = {
-                        **res,
+                        **compact,
                         "composite_score": comp,
                         "weight_pct": holding["weight_pct"],
                         "catalyst": holding["catalyst"],
                         "sector": holding["sector"],
                         "holding_name": holding["name"],
-                        "baker_hist": hist_b,
                         "baker_info": info_b,
                         "is_synthetic": is_synthetic,
+                        "scan_horizon": baker_horizon,
+                        "scan_invest": float(baker_invest),
+                        "scan_beta": stock_beta,
                     }
-            except Exception:
-                pass
+            except Exception as _e:
+                st.session_state.baker_results[tkr] = {"_error": str(_e)}
 
         st.session_state["baker_used_synthetic"] = used_synthetic
 
@@ -3001,7 +3007,7 @@ with tab_baker:
             [
                 {**h, **baker_results[h["ticker"]], "ticker": h["ticker"]}
                 for h in BAKER_HOLDINGS
-                if h["ticker"] in baker_results
+                if h["ticker"] in baker_results and "_error" not in baker_results[h["ticker"]]
             ],
             key=lambda x: x.get("composite_score", 0),
             reverse=True,
