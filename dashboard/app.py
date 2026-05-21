@@ -845,11 +845,12 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN TABS
 # ══════════════════════════════════════════════════════════════════════════════
-tab_home, tab_research, tab_trades, tab_opps, tab_ai = st.tabs([
+tab_home, tab_research, tab_trades, tab_opps, tab_lab, tab_ai = st.tabs([
     "🏠  Portfolio",
     "🔎  Research",
     "📊  My Trades",
     "🎯  Opportunities",
+    "⚡  Quant Lab",
     "🤖  AI Advisor",
 ])
 
@@ -1345,7 +1346,489 @@ with tab_opps:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — AI ADVISOR
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — QUANT LAB
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_lab:
+    st.markdown("#### ⚡ Quant Lab — State-of-the-Art Stock Analysis")
+    st.caption(
+        "Monte Carlo simulation (3,000 paths) · Hurst exponent · GBM + Jump Diffusion · "
+        "Support/Resistance clustering · Kelly sizing · VaR/CVaR · AI synthesis"
+    )
+
+    # ── Inputs ────────────────────────────────────────────────────────────────
+    col_sym, col_inv, col_hor, col_btn = st.columns([2, 2, 2, 1])
+    with col_sym:
+        lab_ticker = st.text_input(
+            "Stock", value=st.session_state.get("lab_ticker", "NVDA"),
+            placeholder="NVDA, AAPL, TSLA...", key="lab_ticker_input",
+        ).upper().strip()
+    with col_inv:
+        lab_invest = st.number_input(
+            "Investment ($)", min_value=100, max_value=10_000_000,
+            value=st.session_state.get("lab_invest", 10000), step=500, key="lab_invest_input",
+        )
+    with col_hor:
+        horizon_label = st.selectbox(
+            "Horizon", ["1 Month", "3 Months", "6 Months", "1 Year", "2 Years"],
+            index=3, key="lab_horizon_sel",
+        )
+        horizon_map = {"1 Month": 21, "3 Months": 63, "6 Months": 126, "1 Year": 252, "2 Years": 504}
+        lab_horizon = horizon_map[horizon_label]
+    with col_btn:
+        st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+        run_lab = st.button("🚀 Analyze", type="primary", use_container_width=True)
+
+    # Store inputs in session state
+    if lab_ticker:
+        st.session_state.lab_ticker = lab_ticker
+    st.session_state.lab_invest = lab_invest
+
+    if run_lab and lab_ticker:
+        st.session_state.lab_results = None
+        st.session_state.lab_hist = None
+        st.session_state.lab_info = None
+
+        with st.spinner(f"Running full quantitative analysis on {lab_ticker}..."):
+            hist_lab, info_lab = fetch_chart(lab_ticker, "1y")
+            if hist_lab.empty:
+                st.error(f"No data for {lab_ticker}. Check the ticker symbol.")
+            else:
+                from analytics.quant import run_full_analysis
+                results = run_full_analysis(
+                    hist=hist_lab,
+                    investment=float(lab_invest),
+                    horizon_days=lab_horizon,
+                    n_paths=3000,
+                )
+                if results:
+                    st.session_state.lab_results = results
+                    st.session_state.lab_hist = hist_lab
+                    st.session_state.lab_info = info_lab
+                    st.session_state.lab_ai_analysis = None  # reset AI
+                else:
+                    st.error("Analysis failed — insufficient price history.")
+
+    # ── Results ───────────────────────────────────────────────────────────────
+    res = st.session_state.get("lab_results")
+    hist_lab = st.session_state.get("lab_hist")
+    info_lab = st.session_state.get("lab_info", {}) or {}
+
+    if res is None:
+        st.info("Enter a ticker and click **Analyze** to run the full quantitative model.")
+        with st.expander("What does this analyze?"):
+            st.markdown("""
+| Model | What it tells you |
+|---|---|
+| **Geometric Brownian Motion + Jump Diffusion** | Simulates 3,000 possible futures for the stock price |
+| **Hurst Exponent (R/S Analysis)** | Is this stock trending, mean-reverting, or random? |
+| **Adaptive Volatility** | Blends short-term and long-term volatility for accuracy |
+| **Monte Carlo Percentile Cone** | Shows the 80% confidence range of where price could go |
+| **Support & Resistance** | Key price levels where the stock historically bounces |
+| **Kelly Criterion** | Optimal position size based on your edge |
+| **VaR / CVaR** | How much can you lose in a bad day (95% confidence) |
+| **Entry Score** | RSI + MACD + Bollinger + trend fusion (0–100) |
+| **AI Synthesis** | Claude reads all the data and gives you a clear verdict |
+            """)
+    else:
+        sym = st.session_state.get("lab_ticker", "")
+        name = info_lab.get("longName") or info_lab.get("shortName") or sym
+        cur = res["current_price"]
+
+        # ── Header ────────────────────────────────────────────────────────────
+        st.markdown(f"""
+        <div style="margin:12px 0 20px;">
+          <span style="font-size:1.5rem;font-weight:800;color:#fff;">{sym}</span>
+          <span style="font-size:1rem;color:#8892a4;margin-left:10px;">{name}</span>
+          <span style="font-size:1.5rem;font-weight:700;color:#fff;margin-left:16px;">${cur:,.2f}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── KPI row ────────────────────────────────────────────────────────────
+        k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+
+        hurst_val = res["hurst"]
+        if hurst_val > 0.58:
+            hurst_label, hurst_color = f"Trending ({hurst_val:.2f})", GREEN
+        elif hurst_val < 0.42:
+            hurst_label, hurst_color = f"Mean-Rev ({hurst_val:.2f})", AMBER
+        else:
+            hurst_label, hurst_color = f"Random ({hurst_val:.2f})", "#8892a4"
+
+        entry_val = res["entry_score"]
+        entry_color = GREEN if entry_val >= 65 else AMBER if entry_val >= 45 else RED
+
+        k1.metric("Hurst Exponent", hurst_label, help=res["regime_note"])
+        k2.metric("Sharpe Ratio", f"{res['sharpe']:.2f}", help="Risk-adjusted return vs 5% risk-free rate")
+        k3.metric("Ann. Volatility", f"{res['sigma_annual_pct']:.0f}%")
+        k4.metric("VaR 95% (daily)", f"-{res['var_95_pct']:.1f}%", help="Expected max daily loss 19/20 days")
+        k5.metric("Entry Score", f"{entry_val:.0f}/100", help="RSI + MACD + Bollinger + Trend fusion")
+        k6.metric("P(Profit)", f"{res['prob_profit']:.0f}%", help=f"Probability above current price in {horizon_label}")
+        k7.metric("Expected Return", f"{res['expected_return_pct']:+.1f}%", help="Monte Carlo mean outcome")
+
+        st.divider()
+
+        # ── Prediction chart ───────────────────────────────────────────────────
+        st.markdown(f"##### Price Forecast — {lab_ticker} next {horizon_label}")
+        st.caption("Historical price + Monte Carlo prediction cone (80% confidence). Green ▲ / Red ▼ = your trades on this stock.")
+
+        # Build prediction chart
+        import pandas.tseries.offsets as offsets
+        close_col = "Close" if "Close" in hist_lab.columns else hist_lab.columns[3]
+        close_hist = hist_lab[close_col].squeeze()
+
+        last_date = hist_lab.index[-1]
+        future_dates = pd.bdate_range(start=last_date, periods=lab_horizon + 1)
+
+        pp = res["percentiles"]
+        fig_pred = go.Figure()
+
+        # Historical line
+        fig_pred.add_trace(go.Scatter(
+            x=hist_lab.index, y=close_hist,
+            line=dict(color="#c8d0e0", width=2),
+            mode="lines", name="Historical Price",
+            hovertemplate="<b>%{x|%b %d '%y}</b>  $%{y:,.2f}<extra></extra>",
+        ))
+
+        # 10-90 band
+        fig_pred.add_trace(go.Scatter(
+            x=list(future_dates) + list(future_dates[::-1]),
+            y=list(pp[90]) + list(pp[10][::-1]),
+            fill="toself", fillcolor="rgba(0,212,170,0.07)",
+            line=dict(color="rgba(0,0,0,0)"), name="80% Range", hoverinfo="skip",
+        ))
+
+        # 25-75 band
+        fig_pred.add_trace(go.Scatter(
+            x=list(future_dates) + list(future_dates[::-1]),
+            y=list(pp[75]) + list(pp[25][::-1]),
+            fill="toself", fillcolor="rgba(0,212,170,0.15)",
+            line=dict(color="rgba(0,0,0,0)"), name="50% Range", hoverinfo="skip",
+        ))
+
+        # Median forecast
+        fig_pred.add_trace(go.Scatter(
+            x=future_dates, y=pp[50],
+            line=dict(color=GREEN, width=2.5, dash="dash"),
+            name="Median Forecast",
+            hovertemplate="<b>Forecast %{x|%b %d '%y}</b>  $%{y:,.2f}<extra></extra>",
+        ))
+
+        # Bull & Bear lines
+        fig_pred.add_trace(go.Scatter(
+            x=future_dates, y=pp[90],
+            line=dict(color="#66ddbb", width=1, dash="dot"),
+            name="Bull (90th %ile)",
+            hovertemplate="Bull: $%{y:,.2f}<extra></extra>",
+        ))
+        fig_pred.add_trace(go.Scatter(
+            x=future_dates, y=pp[10],
+            line=dict(color=RED, width=1, dash="dot"),
+            name="Bear (10th %ile)",
+            hovertemplate="Bear: $%{y:,.2f}<extra></extra>",
+        ))
+
+        # Your trades on this stock as overlays
+        if st.session_state.data_loaded and st.session_state.trades_df is not None:
+            sym_trades = st.session_state.trades_df[st.session_state.trades_df["symbol"] == sym].copy()
+            if len(sym_trades) > 0:
+                buys = sym_trades[pd.to_datetime(sym_trades["buy_date"]) >= hist_lab.index.min()]
+                sells = sym_trades[pd.to_datetime(sym_trades["sell_date"]) <= hist_lab.index.max()]
+                if len(buys) > 0:
+                    fig_pred.add_trace(go.Scatter(
+                        x=pd.to_datetime(buys["buy_date"]), y=buys["buy_price"],
+                        mode="markers",
+                        marker=dict(symbol="triangle-up", size=14, color=GREEN, line=dict(color="white", width=1.5)),
+                        name="Your Buy",
+                        hovertemplate="<b>BUY</b> $%{y:,.2f}<extra></extra>",
+                    ))
+                if len(sells) > 0:
+                    fig_pred.add_trace(go.Scatter(
+                        x=pd.to_datetime(sells["sell_date"]), y=sells["sell_price"],
+                        mode="markers",
+                        marker=dict(symbol="triangle-down", size=14, color=RED, line=dict(color="white", width=1.5)),
+                        name="Your Sell",
+                        hovertemplate="<b>SELL</b> $%{y:,.2f}  P&L: %{customdata:+.1f}%<extra></extra>",
+                        customdata=sells["pnl_pct"].values,
+                    ))
+
+        # Support / Resistance levels
+        for lvl in res.get("support", []):
+            fig_pred.add_hline(
+                y=lvl, line_color=GREEN, line_dash="dot", line_width=1, opacity=0.6,
+                annotation_text=f"  S ${lvl:,.0f}",
+                annotation_position="top left",
+                annotation_font=dict(size=10, color=GREEN),
+            )
+        for lvl in res.get("resistance", []):
+            fig_pred.add_hline(
+                y=lvl, line_color=RED, line_dash="dot", line_width=1, opacity=0.6,
+                annotation_text=f"  R ${lvl:,.0f}",
+                annotation_position="top left",
+                annotation_font=dict(size=10, color=RED),
+            )
+
+        # Today marker
+        fig_pred.add_vline(
+            x=last_date.timestamp() * 1000,
+            line_color="rgba(255,255,255,0.25)", line_dash="dash",
+            annotation_text=" Now", annotation_position="top",
+            annotation_font=dict(size=11, color="#8892a4"),
+        )
+
+        # End-of-forecast annotations
+        sc = res["scenarios"]
+        fig_pred.add_annotation(
+            x=future_dates[-1], y=pp[90][-1],
+            text=f"Bull ${sc['bull_price']:,.0f}", showarrow=False,
+            font=dict(size=10, color=GREEN), xanchor="left",
+        )
+        fig_pred.add_annotation(
+            x=future_dates[-1], y=pp[50][-1],
+            text=f"Base ${sc['base_price']:,.0f}", showarrow=False,
+            font=dict(size=10, color="#c8d0e0"), xanchor="left",
+        )
+        fig_pred.add_annotation(
+            x=future_dates[-1], y=pp[10][-1],
+            text=f"Bear ${sc['bear_price']:,.0f}", showarrow=False,
+            font=dict(size=10, color=RED), xanchor="left",
+        )
+
+        fig_pred.update_xaxes(**_axis_style(show_grid=False))
+        fig_pred.update_yaxes(**_axis_style(show_grid=True), tickprefix="$")
+        fig_pred.update_layout(**_base_layout(margin=dict(t=16, b=8, l=8, r=80)))
+        st.plotly_chart(fig_pred, use_container_width=True, config={"displayModeBar": False})
+
+        st.divider()
+
+        # ── Investment projection + Distribution ───────────────────────────────
+        left_col, right_col = st.columns([3, 2])
+
+        with left_col:
+            st.markdown(f"##### ${lab_invest:,.0f} Investment — {horizon_label} Projection")
+            sc = res["scenarios"]
+            shares = res["shares"]
+
+            # Investment value paths from percentiles
+            bull_vals = pp[90] * shares
+            base_vals = pp[50] * shares
+            bear_vals = pp[10] * shares
+
+            fig_inv = go.Figure()
+
+            # Confidence band
+            fig_inv.add_trace(go.Scatter(
+                x=list(future_dates) + list(future_dates[::-1]),
+                y=list(bull_vals) + list(bear_vals[::-1]),
+                fill="toself", fillcolor="rgba(0,212,170,0.1)",
+                line=dict(color="rgba(0,0,0,0)"), name="80% Range", hoverinfo="skip",
+            ))
+
+            fig_inv.add_trace(go.Scatter(
+                x=future_dates, y=base_vals,
+                line=dict(color=GREEN, width=2.5),
+                name="Expected",
+                hovertemplate="Expected: $%{y:,.0f}<extra></extra>",
+            ))
+            fig_inv.add_trace(go.Scatter(
+                x=future_dates, y=bull_vals,
+                line=dict(color="#66ddbb", width=1.2, dash="dot"),
+                name="Bull",
+                hovertemplate="Bull: $%{y:,.0f}<extra></extra>",
+            ))
+            fig_inv.add_trace(go.Scatter(
+                x=future_dates, y=bear_vals,
+                line=dict(color=RED, width=1.2, dash="dot"),
+                name="Bear",
+                hovertemplate="Bear: $%{y:,.0f}<extra></extra>",
+            ))
+
+            # Starting value line
+            fig_inv.add_hline(
+                y=float(lab_invest),
+                line_color="rgba(255,255,255,0.2)", line_dash="dash",
+                annotation_text=f"  Invested ${lab_invest:,.0f}",
+                annotation_font=dict(size=10, color="#8892a4"),
+            )
+
+            fig_inv.update_xaxes(**_axis_style(show_grid=False))
+            fig_inv.update_yaxes(**_axis_style(show_grid=True), tickprefix="$")
+            fig_inv.update_layout(**_base_layout(margin=dict(t=16, b=8, l=8, r=8)))
+            st.plotly_chart(fig_inv, use_container_width=True, config={"displayModeBar": False})
+
+            # Scenario table
+            bear_col, base_col_ui, bull_col = st.columns(3)
+            bear_delta = sc["bear_value"] - lab_invest
+            base_delta = sc["base_value"] - lab_invest
+            bull_delta = sc["bull_value"] - lab_invest
+            bear_col.metric("Bear (10th %ile)", f"${sc['bear_value']:,.0f}", f"{bear_delta:+,.0f} ({sc['bear_return']:+.1f}%)")
+            base_col_ui.metric("Expected (50th)", f"${sc['base_value']:,.0f}", f"{base_delta:+,.0f} ({sc['base_return']:+.1f}%)")
+            bull_col.metric("Bull (90th %ile)", f"${sc['bull_value']:,.0f}", f"{bull_delta:+,.0f} ({sc['bull_return']:+.1f}%)")
+
+        with right_col:
+            st.markdown("##### Return Distribution (3,000 Simulations)")
+            final_ret_pct = res["final_returns"] * 100
+
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Histogram(
+                x=final_ret_pct,
+                nbinsx=60,
+                marker=dict(
+                    color=[GREEN if v > 0 else RED for v in final_ret_pct],
+                    line=dict(width=0),
+                ),
+                opacity=0.8,
+                name="Simulated Returns",
+                hovertemplate="Return: %{x:.1f}%<br>Count: %{y}<extra></extra>",
+            ))
+
+            # Percentile markers
+            for pct, label, color in [(10, "P10", RED), (50, "P50", "#fff"), (90, "P90", GREEN)]:
+                val = float(np.percentile(final_ret_pct, pct))
+                fig_hist.add_vline(
+                    x=val, line_color=color, line_dash="dash", line_width=1.5,
+                    annotation_text=f" {label}: {val:+.1f}%",
+                    annotation_position="top",
+                    annotation_font=dict(size=9, color=color),
+                )
+
+            fig_hist.add_vline(x=0, line_color="rgba(255,255,255,0.3)", line_width=1)
+            fig_hist.update_xaxes(title_text="Return (%)", **_axis_style(show_grid=False))
+            fig_hist.update_yaxes(title_text="Paths", **_axis_style(show_grid=True))
+            fig_hist.update_layout(**_base_layout(margin=dict(t=16, b=8, l=8, r=8)))
+            st.plotly_chart(fig_hist, use_container_width=True, config={"displayModeBar": False})
+
+            # Probability breakdown
+            st.markdown(f"""
+            <div style="background:#131929;border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,0.08);">
+              <div style="font-size:0.8rem;color:#8892a4;margin-bottom:8px;font-weight:600;">PROBABILITY BREAKDOWN</div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="color:#c8d0e0;">Profit (any gain)</span>
+                <span style="color:{GREEN};font-weight:700;">{res['prob_profit']:.0f}%</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="color:#c8d0e0;">+10% or more</span>
+                <span style="color:{GREEN};font-weight:700;">{res['prob_10pct']:.0f}%</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="color:#c8d0e0;">+20% or more</span>
+                <span style="color:{GREEN};font-weight:700;">{res['prob_20pct']:.0f}%</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;">
+                <span style="color:#c8d0e0;">Loss of 20%+</span>
+                <span style="color:{RED};font-weight:700;">{res['prob_loss_20']:.0f}%</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.divider()
+
+        # ── AI Synthesis ───────────────────────────────────────────────────────
+        st.markdown("##### 🤖 AI Investment Thesis")
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+        if not api_key:
+            st.warning("Add your Anthropic API Key in the sidebar to unlock the AI Synthesis.")
+        else:
+            if st.session_state.get("lab_ai_analysis") is None:
+                run_ai = st.button("Generate AI Thesis", type="primary", key="lab_ai_btn")
+            else:
+                run_ai = False
+
+            if run_ai or st.session_state.get("lab_ai_analysis") is None and st.session_state.get("lab_auto_ai"):
+                sc = res["scenarios"]
+                prompt = f"""You are a world-class quantitative analyst. Produce a concise, direct investment thesis for {sym} ({name}).
+
+QUANTITATIVE DATA:
+• Current Price: ${cur:,.2f}
+• Horizon: {horizon_label}
+• Investment: ${lab_invest:,.0f}
+
+PHYSICS & STATS:
+• Hurst Exponent: {res['hurst']:.3f} → {res['regime']} market ({res['regime_note']})
+• Annual Volatility: {res['sigma_annual_pct']:.1f}%
+• Historical Annual Return: {res['mu_annual_pct']:+.1f}%
+• Sharpe Ratio: {res['sharpe']:.2f}
+• Sortino Ratio: {res['sortino']:.2f}
+• VaR 95% (daily): -{res['var_95_pct']:.2f}%
+
+TECHNICAL SIGNALS:
+• RSI: {res['rsi']:.1f} {'(oversold)' if res['rsi'] < 35 else '(overbought)' if res['rsi'] > 70 else '(neutral)'}
+• MACD: {'Bullish ✓' if res['macd_bullish'] else 'Bearish ✗'}
+• Trend: {res['trend']}
+• 20-day Momentum: {res['momentum_20d']:+.1f}%
+• Entry Score: {res['entry_score']:.0f}/100
+
+MONTE CARLO (3,000 paths, {horizon_label}):
+• P(any profit): {res['prob_profit']:.0f}%
+• P(+10% gain): {res['prob_10pct']:.0f}%
+• P(+20% gain): {res['prob_20pct']:.0f}%
+• P(loss >20%): {res['prob_loss_20']:.0f}%
+• Expected return: {res['expected_return_pct']:+.1f}%
+• Bear (10th %ile): ${sc['bear_value']:,.0f} ({sc['bear_return']:+.1f}%)
+• Expected (50th): ${sc['base_value']:,.0f} ({sc['base_return']:+.1f}%)
+• Bull (90th %ile): ${sc['bull_value']:,.0f} ({sc['bull_return']:+.1f}%)
+
+KEY LEVELS:
+• Support: {', '.join(f'${s:,.0f}' for s in res.get('support',[])[:3]) or 'N/A'}
+• Resistance: {', '.join(f'${r:,.0f}' for r in res.get('resistance',[])[:3]) or 'N/A'}
+
+Provide exactly 5 sections:
+1. **VERDICT** — BUY / HOLD / AVOID + conviction (High/Medium/Low) + one sentence why
+2. **THE EDGE** — What the quantitative data reveals that most investors miss
+3. **ENTRY STRATEGY** — Specific price level or condition to enter; how many shares for ${lab_invest:,.0f}
+4. **RISK MANAGEMENT** — Stop loss level, max acceptable loss, when to exit
+5. **{horizon_label.upper()} TARGET** — Specific dollar outcome for ${lab_invest:,.0f} across bear/base/bull cases
+
+Be specific, use numbers, be direct. No disclaimers. Max 250 words total."""
+
+                with st.spinner("Generating AI thesis..."):
+                    try:
+                        client = anthropic.Anthropic(api_key=api_key)
+                        ai_resp = client.messages.create(
+                            model=MODEL, max_tokens=600,
+                            messages=[{"role": "user", "content": prompt}],
+                        )
+                        st.session_state.lab_ai_analysis = ai_resp.content[0].text
+                    except Exception as exc:
+                        st.session_state.lab_ai_analysis = f"AI analysis error: {exc}"
+
+            if st.session_state.get("lab_ai_analysis"):
+                verdict_text = st.session_state.lab_ai_analysis
+                # Color the verdict line
+                if "BUY" in verdict_text[:200]:
+                    box_color = "rgba(0,212,170,0.1)"
+                    border_color = "rgba(0,212,170,0.3)"
+                elif "AVOID" in verdict_text[:200]:
+                    box_color = "rgba(255,85,102,0.1)"
+                    border_color = "rgba(255,85,102,0.3)"
+                else:
+                    box_color = "rgba(255,170,0,0.08)"
+                    border_color = "rgba(255,170,0,0.25)"
+
+                st.markdown(f"""
+                <div style="background:{box_color};border:1px solid {border_color};
+                            border-radius:12px;padding:20px;line-height:1.7;
+                            font-size:0.95rem;color:#e8eaf0;white-space:pre-wrap;">
+{verdict_text}
+                </div>
+                """, unsafe_allow_html=True)
+
+                if st.button("Regenerate Analysis", key="lab_regen"):
+                    st.session_state.lab_ai_analysis = None
+                    st.session_state.lab_auto_ai = True
+                    st.rerun()
+            else:
+                st.markdown("""
+                <div style="background:#131929;border:1px dashed rgba(255,255,255,0.15);
+                            border-radius:12px;padding:20px;text-align:center;color:#8892a4;">
+                Click <strong style="color:#00d4aa;">Generate AI Thesis</strong> for a full investment analysis
+                </div>
+                """, unsafe_allow_html=True)
+
+
+# TAB 6 — AI ADVISOR
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_ai:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
