@@ -195,8 +195,8 @@ if page == "🔭 Market Scanner":
 
         styled = (
             df_display.style
-            .applymap(color_composite, subset=["Composite"])
-            .applymap(color_z, subset=["Momentum Z", "Value Z", "Quality Z"])
+            .map(color_composite, subset=["Composite"])
+            .map(color_z, subset=["Momentum Z", "Value Z", "Quality Z"])
         )
         st.dataframe(styled, use_container_width=True, height=420)
 
@@ -540,7 +540,7 @@ elif page == "🔬 Deep Analyzer":
                     return ""
 
             st.dataframe(
-                crisis_df.style.applymap(color_drop, subset=["Market Drop", "Position Drop (β-adj)"]),
+                crisis_df.style.map(color_drop, subset=["Market Drop", "Position Drop (β-adj)"]),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -753,7 +753,7 @@ elif page == "💼 Portfolio":
 
             styled_pos = (
                 pos_df.style
-                .applymap(style_pnl, subset=["Unreal. P&L", "Return %"])
+                .map(style_pnl, subset=["Unreal. P&L", "Return %"])
                 .format({"Unreal. P&L": "${:,.2f}", "Return %": "{:+.1f}%"})
             )
             st.dataframe(styled_pos, use_container_width=True, hide_index=True)
@@ -786,7 +786,7 @@ elif page == "💼 Portfolio":
                 return "color: #00e676; font-weight: bold" if val == "BUY" else "color: #ef5350; font-weight: bold"
 
             st.dataframe(
-                trade_df.style.applymap(color_action, subset=["Action"]),
+                trade_df.style.map(color_action, subset=["Action"]),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -917,7 +917,7 @@ elif page == "🧪 Test Suite":
 
                 st.subheader(f"Test Results ({len(rows)} tests)")
                 st.dataframe(
-                    test_df.style.applymap(color_status, subset=["Status"]),
+                    test_df.style.map(color_status, subset=["Status"]),
                     use_container_width=True,
                     hide_index=True,
                     height=min(35 * len(rows) + 40, 600),
