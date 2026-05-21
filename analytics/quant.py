@@ -232,10 +232,12 @@ def run_full_analysis(
     investment: float,
     horizon_days: int,
     n_paths: int = 3000,
+    beta: float = 1.0,
 ) -> dict:
     """
     Complete quant analysis. Returns all metrics + Monte Carlo paths.
     hist must have a 'Close' column (yfinance format, tz-naive).
+    beta: stock beta vs market (from yfinance info). Used for CAPM drift prior.
     """
     if hist.empty or len(hist) < 30:
         return {}
@@ -246,18 +248,30 @@ def run_full_analysis(
 
     current_price = float(close.iloc[-1])
 
-    # ── Drift calibration ─────────────────────────────────────────────────────
-    # Use log returns for unbiased geometric return estimate
+    # ── Drift calibration (CAPM + Bayesian shrinkage) ─────────────────────────
+    # Log returns give unbiased geometric drift estimate
     log_returns = np.log(1 + returns.clip(lower=-0.5, upper=5.0))
     mu_log_daily = float(log_returns.mean())
-    mu_annual = mu_log_daily * 252  # geometric annualized return
+    mu_historical = mu_log_daily * 252  # historical geometric annual return
 
-    # 20-day momentum: annualize geometrically, cap at ±80%, weight lightly
+    # CAPM prior: r_f + beta * ERP — far more stable than 1-yr historical
+    # Avoids the "recent hot stock = forever hot" fallacy
+    risk_free = 0.05          # ~current risk-free rate
+    erp = 0.055               # long-run equity risk premium (Damodaran: 5-6%)
+    beta_clipped = float(np.clip(beta, 0.1, 3.5))
+    capm_mu = risk_free + beta_clipped * erp  # e.g. beta=1.5 → 5% + 8.25% = 13.25%
+
+    # Bayesian shrinkage toward CAPM
+    # Key insight: with only 1 year of data, estimation error of mu ≈ sigma_annual
+    # → safe to weight CAPM heavily; only reduce CAPM weight with 2+ years of data
+    n_years = len(returns) / 252.0
+    # Weight on historical: 20% at 1yr, 40% at 2yr, 60% at 4yr (caps at 60%)
+    hist_weight = float(np.clip(n_years * 0.20, 0.10, 0.60))
+    mu_adjusted = (1 - hist_weight) * capm_mu + hist_weight * mu_historical
+
+    # 20-day momentum: used ONLY in entry_score — NOT in drift estimation
+    # (momentum annualization creates systematic positive skew — see calibration tests)
     mom_20d = float(close.iloc[-1] / close.iloc[-20] - 1) if len(close) >= 20 else 0.0
-    # Geometric annualization with hard cap — prevents noise from dominating
-    annual_mom = float(np.clip((1 + mom_20d) ** (252 / 20) - 1, -0.80, 2.0))
-    # Blend: 80% historical geometric drift + 20% recent momentum signal
-    mu_adjusted = 0.80 * mu_annual + 0.20 * annual_mom
 
     # ── Volatility ────────────────────────────────────────────────────────────
     sigma = adaptive_volatility(returns)
@@ -266,12 +280,10 @@ def run_full_analysis(
     H = hurst_exponent(close.values)
 
     # ── Risk ──────────────────────────────────────────────────────────────────
-    risk_free = 0.05
-    sharpe = (mu_annual - risk_free) / sigma if sigma > 0 else 0.0
-    # Sortino: downside deviation uses log returns for consistency
+    sharpe = (mu_historical - risk_free) / sigma if sigma > 0 else 0.0
     neg_log_rets = log_returns[log_returns < 0]
     sortino_denom = float(neg_log_rets.std() * np.sqrt(252)) if len(neg_log_rets) > 1 else sigma
-    sortino = (mu_annual - risk_free) / sortino_denom if sortino_denom > 0 else 0.0
+    sortino = (mu_historical - risk_free) / sortino_denom if sortino_denom > 0 else 0.0
     daily_var, daily_cvar = var_cvar(log_returns.values)
 
     # ── Technicals ────────────────────────────────────────────────────────────
@@ -325,41 +337,37 @@ def run_full_analysis(
     prob_10pct = float((final_returns > 0.10).mean())
     prob_20pct = float((final_returns > 0.20).mean())
     prob_loss_20 = float((final_returns < -0.20).mean())
-    expected_return = float(final_returns.mean())
+
+    # Median return (P50) — more representative than arithmetic mean for log-normal
+    # Arithmetic mean is always skewed upward by rare extreme gains; median is honest
+    median_return = float(np.median(final_returns))
+    arith_mean_return = float(final_returns.mean())  # kept for reference
 
     percentiles = {k: np.percentile(paths, int(k), axis=0) for k in [10, 25, 50, 75, 90]}
 
     # ── Investment scenarios ───────────────────────────────────────────────────
     shares = investment / current_price
+    med_final = float(np.median(final_prices))
     scenarios = {
         "bear_price":    float(np.percentile(final_prices, 10)),
-        "base_price":    float(np.median(final_prices)),
+        "base_price":    med_final,
         "bull_price":    float(np.percentile(final_prices, 90)),
         "bear_value":    float(np.percentile(final_prices, 10)) * shares,
-        "base_value":    float(np.median(final_prices)) * shares,
+        "base_value":    med_final * shares,
         "bull_value":    float(np.percentile(final_prices, 90)) * shares,
         "bear_return":   float(np.percentile(final_returns, 10)) * 100,
         "base_return":   float(np.median(final_returns)) * 100,
         "bull_return":   float(np.percentile(final_returns, 90)) * 100,
-        "expected_value": investment * (1 + expected_return),
+        "expected_value": med_final * shares,   # median-based (not arithmetic mean)
         "dollar_var_95":  investment * daily_var,
     }
 
     # ── Support / Resistance ──────────────────────────────────────────────────
     supp, res = support_resistance(close)
-
-    # Filter levels within ±25% of current price
     supp = [s for s in supp if abs(s - current_price) / current_price < 0.25][-3:]
-    res = [r for r in res if abs(r - current_price) / current_price < 0.25][:3]
+    res  = [r for r in res  if abs(r - current_price) / current_price < 0.25][:3]
 
-    # ── Optimal entry zones (RSI + Bollinger low + near support) ─────────────
-    # Compute rolling entry signal
-    entry_signal = pd.Series(0.0, index=close.index)
-    for i in range(20, len(close)):
-        slc_ret = returns.iloc[max(0, i - 60): i]
-        slc_rsi = float(rsi) if i == len(close) - 1 else 50.0
-        entry_signal.iloc[i] = 100 - slc_rsi  # simplified: high = good entry
-    # Entry score for NOW
+    # ── Entry score ───────────────────────────────────────────────────────────
     e_score = entry_score(rsi, macd_bullish, bb_pct, H, mom_20d * 100, trend)
 
     # ── Hurst regime label ────────────────────────────────────────────────────
@@ -374,13 +382,16 @@ def run_full_analysis(
         regime_note = "no persistent edge from trend-following"
 
     return {
-        # Prices
         "current_price": current_price,
         "sma20": float(sma20.iloc[-1]),
         "sma50": sma50,
         "sma200": sma200,
-        # Returns
-        "mu_annual_pct": round(mu_annual * 100, 1),
+        # Drift breakdown (for transparency)
+        "mu_historical_pct": round(mu_historical * 100, 1),
+        "mu_capm_pct": round(capm_mu * 100, 1),
+        "mu_adjusted_pct": round(mu_adjusted * 100, 1),
+        # Legacy key kept for backward compat
+        "mu_annual_pct": round(mu_historical * 100, 1),
         "sigma_annual_pct": round(sigma * 100, 1),
         "momentum_20d": round(mom_20d * 100, 1),
         # Risk metrics
@@ -404,7 +415,10 @@ def run_full_analysis(
         "prob_10pct": round(prob_10pct * 100, 1),
         "prob_20pct": round(prob_20pct * 100, 1),
         "prob_loss_20": round(prob_loss_20 * 100, 1),
-        "expected_return_pct": round(expected_return * 100, 1),
+        # Median return (primary) and arithmetic mean (reference only)
+        "median_return_pct": round(median_return * 100, 1),
+        "expected_return_pct": round(median_return * 100, 1),  # UI uses this key
+        "arith_mean_return_pct": round(arith_mean_return * 100, 1),
         # Monte Carlo
         "paths": paths,
         "percentiles": percentiles,

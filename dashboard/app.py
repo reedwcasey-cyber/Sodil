@@ -1658,16 +1658,21 @@ with tab_lab:
         st.session_state.lab_info = None
 
         with st.spinner(f"Running full quantitative analysis on {lab_ticker}..."):
-            hist_lab, info_lab = fetch_chart(lab_ticker, "1y")
+            # Fetch 2 years for better drift estimation (CAPM shrinkage uses data length)
+            hist_lab, info_lab = fetch_chart(lab_ticker, "2y")
+            if hist_lab.empty:
+                hist_lab, info_lab = fetch_chart(lab_ticker, "1y")  # fallback
             if hist_lab.empty:
                 st.error(f"No data for {lab_ticker}. Check the ticker symbol.")
             else:
                 from analytics.quant import run_full_analysis
+                stock_beta = float(info_lab.get("beta") or 1.0)
                 results = run_full_analysis(
                     hist=hist_lab,
                     investment=float(lab_invest),
                     horizon_days=lab_horizon,
                     n_paths=3000,
+                    beta=stock_beta,
                 )
                 if results:
                     st.session_state.lab_results = results
@@ -1734,13 +1739,32 @@ with tab_lab:
         k5.metric("VaR 95%", f"-{res['var_95_pct']:.1f}%", help="Max expected daily loss, 19/20 days")
         k6.metric("Entry Score", f"{entry_val:.0f} / 100", help="RSI + MACD + Bollinger + Trend fusion")
         k7.metric("P(Profit)", f"{res['prob_profit']:.0f}%", help=f"Probability above current price in {horizon_label}")
-        k8.metric("Exp. Return", f"{res['expected_return_pct']:+.1f}%", help="Monte Carlo mean outcome")
+        k8.metric("Median Return", f"{res['median_return_pct']:+.1f}%", help="P50 of 3,000 simulations — half of outcomes above this, half below")
+
+        # ── Model assumptions disclosure ──────────────────────────────────────
+        n_days_used = len(hist_lab.dropna())
+        n_yrs = n_days_used / 252
+        hist_w = min(0.60, n_yrs * 0.20)
+        capm_w = 1 - hist_w
+        st.markdown(f"""
+        <div style="background:#0d1117;border:1px solid rgba(255,255,255,0.07);border-radius:8px;
+                    padding:10px 14px;margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;
+                    font-size:0.72rem;color:#8892a4;">
+          <span>📐 <b style="color:#c8d0e0;">Drift model:</b>
+            {capm_w*100:.0f}% CAPM ({res['mu_capm_pct']:+.1f}%) +
+            {hist_w*100:.0f}% historical ({res['mu_historical_pct']:+.1f}%) =
+            <b style="color:#00d4aa;">{res['mu_adjusted_pct']:+.1f}% adj. drift</b></span>
+          <span>📊 <b style="color:#c8d0e0;">Data:</b> {n_days_used} trading days ({n_yrs:.1f} yrs)</span>
+          <span>🎲 <b style="color:#c8d0e0;">Simulations:</b> 3,000 GBM + Jump Diffusion paths</span>
+          <span>📉 <b style="color:#c8d0e0;">Returns shown:</b> Median (P50) — half of simulations finish above, half below</span>
+        </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
 
         # ── Prediction chart ───────────────────────────────────────────────────
         st.markdown(f"##### Price Forecast — {lab_ticker} next {horizon_label}")
-        st.caption("Historical price + Monte Carlo prediction cone (80% confidence). Green ▲ / Red ▼ = your trades on this stock.")
+        st.caption("Historical price + Monte Carlo prediction cone (80% confidence interval). Green ▲ / Red ▼ = your historical trades.")
 
         # Build prediction chart
         import pandas.tseries.offsets as offsets
