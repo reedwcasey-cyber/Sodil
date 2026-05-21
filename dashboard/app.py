@@ -323,11 +323,231 @@ div[data-testid="stAlert"] p {
 
 /* ── Streamlit column overflow guard ─────────────────────────────────────── */
 [data-testid="column"] { min-width: 0; overflow: hidden; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BAKER INTEL — Iron Man HUD styles
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Intel cards ─────────────────────────────────────────────────────────── */
+.intel-card {
+    background: #080e1a;
+    border: 1px solid rgba(0,229,255,0.15);
+    border-top: 2px solid rgba(0,229,255,0.4);
+    border-radius: 10px;
+    padding: 14px 15px 12px;
+    margin-bottom: 10px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+}
+.intel-card:hover {
+    border-color: rgba(0,229,255,0.5);
+    box-shadow: 0 0 18px rgba(0,229,255,0.12);
+}
+.intel-card-active {
+    background: #080e1a;
+    border: 1px solid rgba(0,229,255,0.6);
+    border-top: 2px solid #00e5ff;
+    border-radius: 10px;
+    padding: 14px 15px 12px;
+    margin-bottom: 10px;
+    box-shadow: 0 0 28px rgba(0,229,255,0.2);
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* ── Rank badge ──────────────────────────────────────────────────────────── */
+.rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 0.68rem;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+.rank-1  { background: rgba(255,215,0,0.2);  color: #ffd700; border: 1px solid rgba(255,215,0,0.5); }
+.rank-2  { background: rgba(192,192,192,0.2); color: #c0c0c0; border: 1px solid rgba(192,192,192,0.5); }
+.rank-3  { background: rgba(205,127,50,0.2);  color: #cd7f32; border: 1px solid rgba(205,127,50,0.5); }
+.rank-other { background: rgba(0,229,255,0.12); color: #00e5ff; border: 1px solid rgba(0,229,255,0.35); }
+.rank-low   { background: rgba(136,146,164,0.15); color: #8892a4; border: 1px solid rgba(136,146,164,0.3); }
+
+/* ── Card typography ─────────────────────────────────────────────────────── */
+.intel-ticker {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #00e5ff;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.intel-name {
+    font-size: 0.68rem;
+    color: #8892a4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
+    margin-top: 1px;
+}
+.intel-score-num {
+    font-size: 1.25rem;
+    font-weight: 900;
+    color: #00e5ff;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.intel-sector {
+    font-size: 0.62rem;
+    color: #4488ff;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* ── Signal badge ────────────────────────────────────────────────────────── */
+.intel-signal {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+.sig-strong-buy { background: rgba(0,229,255,0.15); color: #00e5ff; border: 1px solid rgba(0,229,255,0.4); }
+.sig-buy        { background: rgba(0,212,170,0.15); color: #00d4aa; border: 1px solid rgba(0,212,170,0.35); }
+.sig-hold       { background: rgba(255,170,0,0.15); color: #ffaa00; border: 1px solid rgba(255,170,0,0.35); }
+.sig-watch      { background: rgba(255,136,0,0.12); color: #ff8800; border: 1px solid rgba(255,136,0,0.3); }
+.sig-avoid      { background: rgba(255,85,102,0.12); color: #ff5566; border: 1px solid rgba(255,85,102,0.3); }
+
+/* ── Score progress bar ──────────────────────────────────────────────────── */
+.intel-bar-wrap {
+    background: rgba(255,255,255,0.06);
+    border-radius: 4px;
+    height: 5px;
+    width: 100%;
+    overflow: hidden;
+    margin: 5px 0 4px;
+}
+.intel-bar { height: 5px; border-radius: 4px; }
+
+/* ── Mini metrics ────────────────────────────────────────────────────────── */
+.intel-mini-metric {
+    text-align: center;
+    min-width: 0;
+}
+.intel-mini-val {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #c8d0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.intel-mini-lbl {
+    font-size: 0.58rem;
+    color: #8892a4;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+/* ── Catalyst strip ──────────────────────────────────────────────────────── */
+.catalyst-strip {
+    font-size: 0.67rem;
+    color: #8892a4;
+    border-left: 2px solid rgba(0,229,255,0.35);
+    padding-left: 7px;
+    margin-top: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.45;
+}
+
+/* ── Command header ──────────────────────────────────────────────────────── */
+.baker-command-header {
+    background: #040a14;
+    border: 1px solid rgba(0,229,255,0.2);
+    border-left: 4px solid #00e5ff;
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* ── Portfolio KPI strip ─────────────────────────────────────────────────── */
+.bkr-kpi {
+    text-align: center;
+    min-width: 0;
+}
+.bkr-kpi-val {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #00e5ff;
+    white-space: nowrap;
+}
+.bkr-kpi-lbl {
+    font-size: 0.62rem;
+    color: #8892a4;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+/* ── Deep dive banner ────────────────────────────────────────────────────── */
+.deep-dive-banner {
+    background: #040a14;
+    border: 1px solid rgba(0,229,255,0.35);
+    border-top: 3px solid #00e5ff;
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    position: relative;
+}
+.deep-dive-banner::before {
+    content: "ACTIVE ANALYSIS";
+    position: absolute;
+    top: -9px;
+    left: 16px;
+    background: #00e5ff;
+    color: #040a14;
+    font-size: 0.58rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    padding: 1px 8px;
+    border-radius: 3px;
+}
+
+/* ── Baker weight bar ────────────────────────────────────────────────────── */
+.baker-weight-bar-track {
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    height: 4px;
+    width: 100%;
+    overflow: hidden;
+    margin-top: 6px;
+}
+.baker-weight-bar-fill {
+    height: 4px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #004d66, #00e5ff);
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Color constants ───────────────────────────────────────────────────────────
-GREEN, RED, AMBER, BLUE = "#00d4aa", "#ff5566", "#ffaa00", "#4488ff"
+GREEN, RED, AMBER, BLUE, CYAN = "#00d4aa", "#ff5566", "#ffaa00", "#4488ff", "#00e5ff"
 TEAL_SCALE = [[0, RED], [0.5, AMBER], [1, GREEN]]
 
 MODEL = "claude-opus-4-7"
@@ -356,6 +576,26 @@ TOOLS = [
 ]
 
 PERIOD_MAP = {"1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y", "5Y": "5y"}
+HORIZON_MAP = {"1 Month": 21, "3 Months": 63, "6 Months": 126, "1 Year": 252, "2 Years": 504}
+
+BAKER_HOLDINGS = [
+    {"ticker": "LEGN",  "name": "Legend Biotech",            "weight_pct": 8.2,  "sector": "Oncology",       "catalyst": "CARVYKTI myeloma CAR-T global expansion + 2L indication label filing"},
+    {"ticker": "RCUS",  "name": "Arcus Biosciences",         "weight_pct": 7.1,  "sector": "Oncology",       "catalyst": "Zimberelimab + Domvanalimab NSCLC Phase 3 combination readout 2025"},
+    {"ticker": "SWTX",  "name": "SpringWorks Therapeutics",  "weight_pct": 6.8,  "sector": "Oncology",       "catalyst": "Nirogacestat commercial ramp — desmoid tumor first-in-class monopoly"},
+    {"ticker": "BEAM",  "name": "Beam Therapeutics",         "weight_pct": 5.9,  "sector": "Gene Editing",   "catalyst": "BEAM-101 base editing sickle cell + beta-thal Phase 1/2 efficacy data"},
+    {"ticker": "ACAD",  "name": "ACADIA Pharmaceuticals",    "weight_pct": 5.3,  "sector": "Neuroscience",   "catalyst": "Daybue Rett syndrome commercial ramp + Parkinson's psychosis expansion"},
+    {"ticker": "PCVX",  "name": "Vaxcyte",                   "weight_pct": 4.8,  "sector": "Vaccines",       "catalyst": "VAX-24 24-valent pneumococcal Phase 3 data vs Prevnar 20 superiority"},
+    {"ticker": "NTLA",  "name": "Intellia Therapeutics",     "weight_pct": 4.5,  "sector": "Gene Editing",   "catalyst": "NTLA-2001 in vivo CRISPR TTR amyloidosis Phase 3 global start"},
+    {"ticker": "DNLI",  "name": "Denali Therapeutics",        "weight_pct": 4.2,  "sector": "Neuroscience",   "catalyst": "ETV:IDS Hunter syndrome Phase 2 data + DNL310 BBB-platform readout"},
+    {"ticker": "ALEC",  "name": "Alector",                   "weight_pct": 3.8,  "sector": "Neuroscience",   "catalyst": "AL002 microglial ALS/AD Phase 2 + AbbVie partnership milestone payments"},
+    {"ticker": "ROIV",  "name": "Roivant Sciences",          "weight_pct": 3.5,  "sector": "Diversified Bio","catalyst": "Immunovant batoclimab TFC Phase 3 + Priovant rheumatology pipeline news"},
+    {"ticker": "ARQT",  "name": "Arcutis Biotherapeutics",   "weight_pct": 3.2,  "sector": "Dermatology",    "catalyst": "Zoryve cream/foam psoriasis + seborrheic derm commercial volume ramp"},
+    {"ticker": "EDIT",  "name": "Editas Medicine",           "weight_pct": 2.9,  "sector": "Gene Editing",   "catalyst": "EBT-101 CRISPR sickle cell Phase 1/2 + Cas12a in vivo program advances"},
+    {"ticker": "TWST",  "name": "Twist Bioscience",          "weight_pct": 2.7,  "sector": "Synthetic Bio",  "catalyst": "Synthetic DNA scale economics improvement + NGS antibody library revenue"},
+    {"ticker": "IONS",  "name": "Ionis Pharmaceuticals",     "weight_pct": 2.5,  "sector": "Rare Disease",   "catalyst": "Eplontersen amyloidosis commercial launch + partner royalty milestones"},
+    {"ticker": "NRIX",  "name": "Nurix Therapeutics",        "weight_pct": 2.3,  "sector": "Oncology",       "catalyst": "NX-2127 BTK protein degrader B-cell malignancies Phase 1 dose escalation"},
+]
+
 SUGGESTED_QUESTIONS = [
     "What is my win rate and biggest edge?",
     "Show me my top 3 opportunities right now",
@@ -380,6 +620,9 @@ _DEFAULTS: dict[str, Any] = {
     "research_ticker": "NVDA",
     "research_period": "1Y",
     "watchlist": ["NVDA", "AAPL", "META", "MSFT"],
+    "baker_results": {},
+    "baker_selected": None,
+    "baker_invest": 25000,
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
@@ -491,6 +734,28 @@ def compute_risk_metrics(trades_df: pd.DataFrame) -> dict:
         "avg_loss_pct": avg_loss,
         "win_rate": wr,
     }
+
+
+def baker_composite_score(res: dict, weight_pct: float) -> float:
+    """
+    0-100 composite opportunity score for Baker Brothers holdings.
+    P(profit) 25% · risk-adj return 20% · entry quality 20% ·
+    tail protection 15% · Baker conviction 10% · Hurst edge 10%
+    """
+    score = 0.0
+    score += (res.get("prob_profit", 50.0) / 100.0) * 25.0
+    median_ret = res.get("median_return_pct", 0.0)
+    sharpe = res.get("sharpe", 0.0)
+    ret_norm = float(np.clip((median_ret + 30.0) / 80.0, 0.0, 1.0))
+    sharpe_mult = float(np.clip((sharpe + 0.5) / 2.5, 0.0, 1.0))
+    score += ret_norm * sharpe_mult * 20.0
+    score += (res.get("entry_score", 50.0) / 100.0) * 20.0
+    prob_loss_20 = res.get("prob_loss_20", 20.0)
+    score += float(np.clip(1.0 - (prob_loss_20 / 40.0), 0.0, 1.0)) * 15.0
+    score += float(np.clip(weight_pct / 10.0, 0.0, 1.0)) * 10.0
+    hurst = res.get("hurst", 0.5)
+    score += float(np.clip((hurst - 0.4) / 0.35, 0.0, 1.0)) * 10.0
+    return float(np.clip(score, 0.0, 100.0))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
