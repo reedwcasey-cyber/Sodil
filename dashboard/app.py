@@ -1,7 +1,6 @@
 """
-Sodil Web Dashboard
-Run with:  python launch.py
-Or:        streamlit run dashboard/app.py
+Sodil — Investment Intelligence Dashboard
+Launch:  python launch.py   (or: streamlit run dashboard/app.py)
 """
 from __future__ import annotations
 
@@ -19,8 +18,8 @@ sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+import plotly.express as px
 import streamlit as st
 import anthropic
 
@@ -29,66 +28,97 @@ st.set_page_config(
     page_title="Sodil",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
     menu_items={"About": "Sodil — Quantitative Investment Intelligence"},
 )
 
 st.markdown("""
 <style>
-#MainMenu, footer { visibility: hidden; }
+/* Global */
+#MainMenu, footer, header { visibility: hidden; }
+.block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px; }
+
+/* Position cards */
+.pos-card {
+    background: #131929;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+}
+.pos-card:hover { border-color: rgba(0,212,170,0.4); }
+.pos-sym  { font-size: 1.1rem; font-weight: 700; color: #fff; }
+.pos-name { font-size: 0.75rem; color: #8892a4; margin-bottom: 6px; }
+.pos-price { font-size: 1.3rem; font-weight: 700; color: #fff; }
+.pos-ret-pos { font-size: 0.85rem; color: #00d4aa; font-weight: 600; }
+.pos-ret-neg { font-size: 0.85rem; color: #ff5566; font-weight: 600; }
+.pos-meta  { font-size: 0.75rem; color: #8892a4; margin-top: 4px; }
+
+/* KPI metric */
 div[data-testid="metric-container"] {
-    background: rgba(0,212,170,0.08);
-    border: 1px solid rgba(0,212,170,0.2);
+    background: #131929;
+    border: 1px solid rgba(255,255,255,0.08);
     border-radius: 10px;
     padding: 14px 18px;
 }
-div[data-testid="stTabs"] button[data-baseweb="tab"] {
-    font-size: 0.95rem;
-    font-weight: 600;
-}
+
+/* Tab font */
+div[data-testid="stTabs"] button { font-size: 0.9rem; font-weight: 600; letter-spacing: 0.01em; }
+
+/* Signal badge */
+.badge-bull { display:inline-block; background:rgba(0,212,170,0.15); color:#00d4aa;
+              border:1px solid rgba(0,212,170,0.3); border-radius:6px; padding:2px 8px;
+              font-size:0.78rem; font-weight:600; }
+.badge-bear { display:inline-block; background:rgba(255,85,102,0.15); color:#ff5566;
+              border:1px solid rgba(255,85,102,0.3); border-radius:6px; padding:2px 8px;
+              font-size:0.78rem; font-weight:600; }
+.badge-neutral { display:inline-block; background:rgba(255,170,0,0.15); color:#ffaa00;
+                  border:1px solid rgba(255,170,0,0.3); border-radius:6px; padding:2px 8px;
+                  font-size:0.78rem; font-weight:600; }
+
+/* Score bar */
+.score-bar-wrap { background:#1e2130; border-radius:6px; height:8px; width:100%; overflow:hidden; }
+.score-bar      { height:8px; border-radius:6px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-MODEL = "claude-opus-4-7"
-SYSTEM = """You are Sodil, a quantitative investment assistant with access to
-real-time portfolio and market data tools. Help the user understand their
-portfolio, analyze their trading process, and discover new opportunities.
+# ── Color constants ───────────────────────────────────────────────────────────
+GREEN, RED, AMBER, BLUE = "#00d4aa", "#ff5566", "#ffaa00", "#4488ff"
+TEAL_SCALE = [[0, RED], [0.5, AMBER], [1, GREEN]]
 
-Use tools whenever a question involves current data. Be concise and specific —
-quote numbers from the data you fetched.
-- Edge analysis: use analyze_trades
-- Stock ideas: use screen_market then get_recommendations
-- Portfolio / positions / P&L: use get_portfolio"""
+MODEL = "claude-opus-4-7"
+SYSTEM = """You are Sodil, a world-class quantitative investment advisor. You have access to the user's live portfolio, trade history, and market data.
+
+Be concise and numbers-driven. Always quote specific figures. When the user asks about their edge, use analyze_trades. For opportunities, use screen_market then get_recommendations. For portfolio/P&L, use get_portfolio.
+
+Give clear buy/hold/avoid verdicts when analyzing specific stocks."""
 
 TOOLS = [
-    {
-        "name": "get_portfolio",
-        "description": "Fetch current portfolio value, cash, buying power, and all open positions with P&L.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "analyze_trades",
-        "description": "Analyze historical trade history to compute win rate, profit factor, best sectors, hold durations, and statistical edge.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "screen_market",
-        "description": "Screen the market for candidate stocks with technical and fundamental criteria.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
-    },
+    {"name": "get_portfolio", "description": "Fetch portfolio value, cash, buying power, and all open positions with P&L.", "input_schema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "analyze_trades", "description": "Compute win rate, profit factor, best sectors/hold-durations/RSI-bands, and full statistical edge from trade history.", "input_schema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "screen_market", "description": "Screen 150+ stocks for technically and fundamentally sound candidates.", "input_schema": {"type": "object", "properties": {}, "required": []}},
     {
         "name": "get_recommendations",
-        "description": "Score market candidates against edge profile and return ranked stock and options recommendations.",
+        "description": "Score candidates against the user's personal edge profile and return ranked picks.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "candidates_json": {"type": "string", "description": "JSON string of candidates from screen_market"},
-                "stats_json": {"type": "string", "description": "JSON string of stats from analyze_trades"},
+                "candidates_json": {"type": "string"},
+                "stats_json": {"type": "string"},
             },
             "required": ["candidates_json", "stats_json"],
         },
     },
+]
+
+PERIOD_MAP = {"1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y", "5Y": "5y"}
+SUGGESTED_QUESTIONS = [
+    "What is my win rate and biggest edge?",
+    "Show me my top 3 opportunities right now",
+    "Which positions should I be worried about?",
+    "What's my best sector and why?",
+    "How should I size my next trade?",
 ]
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -104,24 +134,30 @@ _DEFAULTS: dict[str, Any] = {
     "chat_messages": [],
     "api_messages": [],
     "data_loaded": False,
+    "research_ticker": "NVDA",
+    "research_period": "1Y",
+    "watchlist": ["NVDA", "AAPL", "META", "MSFT"],
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-# ── Demo data ─────────────────────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DEMO DATA
+# ══════════════════════════════════════════════════════════════════════════════
 def _demo_portfolio() -> dict:
     return {"equity": 47_823.44, "cash": 3_210.00, "buying_power": 6_420.00, "total_return_pct": 12.4}
 
 
 def _demo_positions() -> list[dict]:
     return [
-        {"symbol": "NVDA", "quantity": 15, "avg_cost": 420.00, "current_price": 875.32, "market_value": 13129.80, "total_return": 6829.80, "return_pct": 108.3, "day_return_pct": 2.1},
-        {"symbol": "AAPL", "quantity": 25, "avg_cost": 168.50, "current_price": 189.25, "market_value": 4731.25, "total_return": 518.75, "return_pct": 12.3, "day_return_pct": -0.3},
-        {"symbol": "TSLA", "quantity": 10, "avg_cost": 235.00, "current_price": 178.40, "market_value": 1784.00, "total_return": -566.00, "return_pct": -24.1, "day_return_pct": -1.8},
-        {"symbol": "META", "quantity": 8, "avg_cost": 290.00, "current_price": 491.00, "market_value": 3928.00, "total_return": 1608.00, "return_pct": 69.3, "day_return_pct": 0.7},
-        {"symbol": "AMD", "quantity": 30, "avg_cost": 95.00, "current_price": 162.50, "market_value": 4875.00, "total_return": 2025.00, "return_pct": 71.1, "day_return_pct": 1.2},
-        {"symbol": "MSFT", "quantity": 12, "avg_cost": 330.00, "current_price": 415.80, "market_value": 4989.60, "total_return": 1029.60, "return_pct": 26.0, "day_return_pct": 0.4},
+        {"symbol": "NVDA", "name": "NVIDIA Corp",       "quantity": 15, "avg_cost": 420.00, "current_price": 875.32, "market_value": 13129.80, "total_return": 6829.80, "return_pct": 108.3, "day_return_pct": 2.1},
+        {"symbol": "AAPL", "name": "Apple Inc",          "quantity": 25, "avg_cost": 168.50, "current_price": 189.25, "market_value": 4731.25,  "total_return": 518.75,  "return_pct": 12.3,  "day_return_pct": -0.3},
+        {"symbol": "TSLA", "name": "Tesla Inc",          "quantity": 10, "avg_cost": 235.00, "current_price": 178.40, "market_value": 1784.00,  "total_return": -566.00, "return_pct": -24.1, "day_return_pct": -1.8},
+        {"symbol": "META", "name": "Meta Platforms",     "quantity": 8,  "avg_cost": 290.00, "current_price": 491.00, "market_value": 3928.00,  "total_return": 1608.00, "return_pct": 69.3,  "day_return_pct": 0.7},
+        {"symbol": "AMD",  "name": "Advanced Micro Devices","quantity": 30, "avg_cost": 95.00, "current_price": 162.50, "market_value": 4875.00, "total_return": 2025.00, "return_pct": 71.1,  "day_return_pct": 1.2},
+        {"symbol": "MSFT", "name": "Microsoft Corp",     "quantity": 12, "avg_cost": 330.00, "current_price": 415.80, "market_value": 4989.60,  "total_return": 1029.60, "return_pct": 26.0,  "day_return_pct": 0.4},
     ]
 
 
@@ -129,142 +165,398 @@ def _demo_trades() -> pd.DataFrame:
     np.random.seed(42)
     symbols = ["NVDA","AAPL","TSLA","META","AMD","MSFT","GOOGL","AMZN","NFLX","CRWD","SNOW","PLTR","DDOG","ZS","NET"]
     sectors = {
-        "NVDA": "Technology", "AAPL": "Technology", "TSLA": "Consumer Cyclical",
-        "META": "Communication Services", "AMD": "Technology", "MSFT": "Technology",
-        "GOOGL": "Communication Services", "AMZN": "Consumer Cyclical",
-        "NFLX": "Communication Services", "CRWD": "Technology", "SNOW": "Technology",
-        "PLTR": "Technology", "DDOG": "Technology", "ZS": "Technology", "NET": "Technology",
+        "NVDA":"Technology","AAPL":"Technology","TSLA":"Consumer Cyclical","META":"Communication Services",
+        "AMD":"Technology","MSFT":"Technology","GOOGL":"Communication Services","AMZN":"Consumer Cyclical",
+        "NFLX":"Communication Services","CRWD":"Technology","SNOW":"Technology","PLTR":"Technology",
+        "DDOG":"Technology","ZS":"Technology","NET":"Technology",
     }
-    rows = []
-    base = pd.Timestamp("2023-01-01")
+    rows, base = [], pd.Timestamp("2023-01-01")
     for i in range(60):
         sym = np.random.choice(symbols)
         sector = sectors[sym]
         hold = int(np.random.choice([1,3,7,14,30,60,90,180], p=[0.05,0.10,0.15,0.20,0.25,0.15,0.07,0.03]))
         buy = round(np.random.uniform(50, 500), 2)
         pnl = round(np.random.normal(
-            14 if sector == "Technology" else -2 if sym in ("TSLA", "AMZN") else 4,
-            18 if sector == "Technology" else 22 if sym in ("TSLA", "AMZN") else 12,
+            14 if sector == "Technology" else -2 if sym in ("TSLA","AMZN") else 4,
+            18 if sector == "Technology" else 22 if sym in ("TSLA","AMZN") else 12,
         ), 2)
         sell = round(buy * (1 + pnl / 100), 2)
         qty = round(np.random.uniform(5, 50), 2)
         buy_date = base + pd.Timedelta(days=i * 6)
         rows.append({
             "symbol": sym, "sector": sector,
-            "buy_date": buy_date, "sell_date": buy_date + pd.Timedelta(days=hold),
+            "buy_date": buy_date,
+            "sell_date": buy_date + pd.Timedelta(days=hold),
             "hold_days": hold, "buy_price": buy, "sell_price": sell, "quantity": qty,
             "pnl_dollar": (sell - buy) * qty, "pnl_pct": pnl, "win": pnl > 0,
-            "market_cap_bucket": np.random.choice(["Mega","Large","Mid"], p=[0.5, 0.3, 0.2]),
+            "market_cap_bucket": np.random.choice(["Mega","Large","Mid"], p=[0.5,0.3,0.2]),
             "entry_rsi": round(np.random.uniform(28, 72), 1),
-            "entry_regime": np.random.choice(["Uptrend","Sideways","Downtrend"], p=[0.55, 0.30, 0.15]),
-            "hold_bucket": np.random.choice(["Swing (2-7d)","Monthly (1mo)","Quarterly (3mo)"], p=[0.3, 0.5, 0.2]),
-            "rsi_band": np.random.choice(["Oversold(<30)","Low(30-45)","Neutral(45-55)","High(55-70)"], p=[0.1, 0.3, 0.4, 0.2]),
+            "entry_regime": np.random.choice(["Uptrend","Sideways","Downtrend"], p=[0.55,0.30,0.15]),
         })
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    df["hold_bucket"] = pd.cut(
+        df["hold_days"], bins=[-1,1,7,30,90,365,9999],
+        labels=["Intraday","Swing (2-7d)","Monthly (1mo)","Quarterly (3mo)","Annual (1yr)","Long-term"],
+    )
+    df["rsi_band"] = pd.cut(
+        df["entry_rsi"], bins=[0,30,45,55,70,100],
+        labels=["Oversold(<30)","Low(30-45)","Neutral(45-55)","High(55-70)","Overbought(>70)"],
+    )
+    return df
 
 
 def _demo_candidates() -> pd.DataFrame:
     return pd.DataFrame([
-        {"symbol":"CRWD","name":"CrowdStrike","sector":"Technology","current_price":325.0,"rsi":48.2,"trend":"Uptrend","macd_bullish":True,"momentum_20d":8.4,"volatility_20d":32.1,"revenue_growth":0.33,"beta":1.4},
-        {"symbol":"DDOG","name":"Datadog","sector":"Technology","current_price":142.0,"rsi":42.5,"trend":"Uptrend","macd_bullish":True,"momentum_20d":5.2,"volatility_20d":38.4,"revenue_growth":0.27,"beta":1.6},
-        {"symbol":"NET","name":"Cloudflare","sector":"Technology","current_price":98.0,"rsi":44.0,"trend":"Uptrend","macd_bullish":True,"momentum_20d":6.1,"volatility_20d":41.2,"revenue_growth":0.30,"beta":1.7},
-        {"symbol":"PANW","name":"Palo Alto Networks","sector":"Technology","current_price":358.0,"rsi":52.1,"trend":"Strong Uptrend","macd_bullish":True,"momentum_20d":12.3,"volatility_20d":28.6,"revenue_growth":0.22,"beta":1.2},
-        {"symbol":"COIN","name":"Coinbase","sector":"Financial Services","current_price":220.0,"rsi":45.0,"trend":"Uptrend","macd_bullish":True,"momentum_20d":11.2,"volatility_20d":68.4,"revenue_growth":None,"beta":2.8},
-        {"symbol":"SNOW","name":"Snowflake","sector":"Technology","current_price":185.0,"rsi":38.0,"trend":"Uptrend","macd_bullish":False,"momentum_20d":3.1,"volatility_20d":44.1,"revenue_growth":0.35,"beta":1.9},
-        {"symbol":"PLTR","name":"Palantir","sector":"Technology","current_price":42.0,"rsi":55.0,"trend":"Strong Uptrend","macd_bullish":True,"momentum_20d":18.2,"volatility_20d":52.3,"revenue_growth":0.21,"beta":2.1},
+        {"symbol":"CRWD","name":"CrowdStrike","sector":"Technology","current_price":325.0,"market_cap":80e9,"rsi":48.2,"trend":"Uptrend","macd_bullish":True,"momentum_20d":8.4,"momentum_5d":2.1,"volatility_20d":32.1,"revenue_growth":0.33,"beta":1.4,"52w_high":395,"52w_low":130},
+        {"symbol":"DDOG","name":"Datadog","sector":"Technology","current_price":142.0,"market_cap":45e9,"rsi":42.5,"trend":"Uptrend","macd_bullish":True,"momentum_20d":5.2,"momentum_5d":1.8,"volatility_20d":38.4,"revenue_growth":0.27,"beta":1.6,"52w_high":175,"52w_low":90},
+        {"symbol":"NET","name":"Cloudflare","sector":"Technology","current_price":98.0,"market_cap":32e9,"rsi":44.0,"trend":"Uptrend","macd_bullish":True,"momentum_20d":6.1,"momentum_5d":0.9,"volatility_20d":41.2,"revenue_growth":0.30,"beta":1.7,"52w_high":120,"52w_low":55},
+        {"symbol":"PANW","name":"Palo Alto Networks","sector":"Technology","current_price":358.0,"market_cap":115e9,"rsi":52.1,"trend":"Strong Uptrend","macd_bullish":True,"momentum_20d":12.3,"momentum_5d":3.2,"volatility_20d":28.6,"revenue_growth":0.22,"beta":1.2,"52w_high":380,"52w_low":200},
+        {"symbol":"ISRG","name":"Intuitive Surgical","sector":"Healthcare","current_price":415.0,"market_cap":147e9,"rsi":56.0,"trend":"Strong Uptrend","macd_bullish":True,"momentum_20d":9.1,"momentum_5d":1.8,"volatility_20d":22.3,"revenue_growth":0.14,"beta":0.9,"52w_high":430,"52w_low":290},
+        {"symbol":"COIN","name":"Coinbase","sector":"Financial Services","current_price":220.0,"market_cap":55e9,"rsi":45.0,"trend":"Uptrend","macd_bullish":True,"momentum_20d":11.2,"momentum_5d":3.5,"volatility_20d":68.4,"revenue_growth":None,"beta":2.8,"52w_high":283,"52w_low":80},
+        {"symbol":"AXON","name":"Axon Enterprise","sector":"Industrials","current_price":295.0,"market_cap":19e9,"rsi":46.2,"trend":"Uptrend","macd_bullish":True,"momentum_20d":7.3,"momentum_5d":2.4,"volatility_20d":35.5,"revenue_growth":0.30,"beta":1.3,"52w_high":330,"52w_low":165},
     ])
 
 
-# ── Risk / performance metrics ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ANALYTICS
+# ══════════════════════════════════════════════════════════════════════════════
 def compute_risk_metrics(trades_df: pd.DataFrame) -> dict:
     if trades_df is None or trades_df.empty:
         return {}
     wins = trades_df[trades_df["win"]]
     losses = trades_df[~trades_df["win"]]
-    win_rate = float(trades_df["win"].mean())
+    wr = float(trades_df["win"].mean())
     avg_win = float(wins["pnl_pct"].mean()) if not wins.empty else 0.0
     avg_loss = float(abs(losses["pnl_pct"].mean())) if not losses.empty else 1.0
     b = avg_win / avg_loss if avg_loss > 0 else 0
-    kelly_raw = (win_rate * b - (1 - win_rate)) / b if b > 0 else 0
-    half_kelly = max(0.0, kelly_raw / 2)
-    expectancy = win_rate * avg_win - (1 - win_rate) * avg_loss
-    returns = trades_df["pnl_pct"].values
-    sharpe = float(returns.mean() / returns.std() * np.sqrt(12)) if returns.std() > 0 else 0.0
-    cumulative = trades_df["pnl_dollar"].cumsum().values
-    peak = np.maximum.accumulate(cumulative)
-    drawdown = (peak - cumulative) / np.where(peak == 0, 1, peak)
-    gross_profit = float(wins["pnl_dollar"].sum()) if not wins.empty else 0.0
-    gross_loss = float(abs(losses["pnl_dollar"].sum())) if not losses.empty else 1.0
+    kelly = max(0.0, ((wr * b - (1 - wr)) / b) / 2) if b > 0 else 0
+    expectancy = wr * avg_win - (1 - wr) * avg_loss
+    ret = trades_df["pnl_pct"].values
+    sharpe = float(ret.mean() / ret.std() * np.sqrt(12)) if ret.std() > 0 else 0.0
+    cum = trades_df["pnl_dollar"].cumsum().values
+    peak = np.maximum.accumulate(cum)
+    dd = (peak - cum) / np.where(peak == 0, 1, peak)
+    gp = float(wins["pnl_dollar"].sum()) if not wins.empty else 0.0
+    gl = float(abs(losses["pnl_dollar"].sum())) if not losses.empty else 1.0
     return {
-        "half_kelly_pct": half_kelly * 100,
+        "half_kelly_pct": kelly * 100,
         "expectancy_pct": expectancy,
         "sharpe": sharpe,
-        "max_drawdown_pct": float(drawdown.max() * 100),
-        "profit_factor": gross_profit / gross_loss,
+        "max_drawdown_pct": float(dd.max() * 100),
+        "profit_factor": gp / gl,
         "avg_win_pct": avg_win,
         "avg_loss_pct": avg_loss,
-        "win_rate": win_rate,
+        "win_rate": wr,
     }
 
 
-# ── Tool execution ────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# CHART HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+def _base_layout(**kwargs) -> dict:
+    base = dict(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#c8d0e0", size=12),
+        margin=dict(t=32, b=28, l=8, r=8),
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.08, x=0, font=dict(size=11)),
+    )
+    base.update(kwargs)
+    return base
+
+
+def _axis_style(show_grid: bool = True) -> dict:
+    return dict(
+        showgrid=show_grid,
+        gridcolor="rgba(255,255,255,0.06)",
+        zeroline=False,
+        showline=False,
+        tickfont=dict(size=11, color="#8892a4"),
+    )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_chart(symbol: str, period: str) -> tuple[pd.DataFrame, dict]:
+    """Fetch OHLCV + fundamentals for any ticker. Cached 5 min."""
+    try:
+        import yfinance as yf
+        tk = yf.Ticker(symbol.upper())
+        hist = tk.history(period=period, auto_adjust=True)
+        if not hist.empty:
+            hist.index = hist.index.tz_localize(None)
+        info = tk.info or {}
+        return hist, info
+    except Exception:
+        return pd.DataFrame(), {}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_technicals(symbol: str) -> dict:
+    """Fetch and compute full technical indicators for a ticker."""
+    try:
+        from market.data import get_price_history, compute_technicals
+        hist = get_price_history(symbol, period="1y")
+        if hist.empty:
+            return {}
+        return compute_technicals(hist)
+    except Exception:
+        return {}
+
+
+def build_price_chart(
+    hist: pd.DataFrame,
+    symbol: str,
+    trades_df: pd.DataFrame | None = None,
+    show_volume: bool = True,
+) -> go.Figure:
+    """
+    Robinhood-style area chart with buy/sell trade overlays.
+    Gradient fill: green if price up over period, red if down.
+    """
+    if hist.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="No data available", showarrow=False, font=dict(color="#8892a4"))
+        fig.update_layout(**_base_layout())
+        return fig
+
+    close = hist["Close"] if "Close" in hist.columns else hist.iloc[:, 3]
+    is_up = float(close.iloc[-1]) >= float(close.iloc[0])
+    line_color = GREEN if is_up else RED
+    fill_color = "rgba(0,212,170,0.12)" if is_up else "rgba(255,85,102,0.12)"
+
+    from plotly.subplots import make_subplots
+    rows = 2 if (show_volume and "Volume" in hist.columns) else 1
+    row_heights = [0.75, 0.25] if rows == 2 else [1]
+    fig = make_subplots(
+        rows=rows, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=row_heights,
+    )
+
+    # Price area
+    fig.add_trace(go.Scatter(
+        x=hist.index, y=close,
+        fill="tozeroy",
+        fillcolor=fill_color,
+        line=dict(color=line_color, width=2.5),
+        mode="lines",
+        name="Price",
+        hovertemplate="<b>%{x|%b %d '%y}</b>  $%{y:,.2f}<extra></extra>",
+    ), row=1, col=1)
+
+    # SMA overlays (from longer period history only)
+    if len(hist) >= 50:
+        sma20 = close.rolling(20).mean()
+        sma50 = close.rolling(50).mean()
+        fig.add_trace(go.Scatter(
+            x=hist.index, y=sma20,
+            line=dict(color="rgba(255,170,0,0.6)", width=1.2, dash="dot"),
+            mode="lines", name="SMA20",
+            hovertemplate="SMA20: $%{y:,.2f}<extra></extra>",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=hist.index, y=sma50,
+            line=dict(color="rgba(68,136,255,0.6)", width=1.2, dash="dot"),
+            mode="lines", name="SMA50",
+            hovertemplate="SMA50: $%{y:,.2f}<extra></extra>",
+        ), row=1, col=1)
+
+    # Trade markers
+    if trades_df is not None and not trades_df.empty:
+        sym_trades = trades_df[trades_df["symbol"] == symbol.upper()].copy()
+        if len(sym_trades) > 0:
+            # Filter to visible date range
+            start_dt = hist.index.min()
+            end_dt = hist.index.max()
+
+            buys = sym_trades[
+                (pd.to_datetime(sym_trades["buy_date"]) >= start_dt) &
+                (pd.to_datetime(sym_trades["buy_date"]) <= end_dt)
+            ]
+            sells = sym_trades[
+                (pd.to_datetime(sym_trades["sell_date"]) >= start_dt) &
+                (pd.to_datetime(sym_trades["sell_date"]) <= end_dt)
+            ]
+
+            if len(buys) > 0:
+                hover_buy = [
+                    f"<b>BUY {r.symbol}</b><br>${r.buy_price:,.2f} × {r.quantity:.0f} shares"
+                    for _, r in buys.iterrows()
+                ]
+                fig.add_trace(go.Scatter(
+                    x=pd.to_datetime(buys["buy_date"]),
+                    y=buys["buy_price"],
+                    mode="markers",
+                    marker=dict(
+                        symbol="triangle-up", size=16, color=GREEN,
+                        line=dict(color="white", width=1.5),
+                    ),
+                    name="Your Buy",
+                    hovertemplate="%{text}<extra></extra>",
+                    text=hover_buy,
+                ), row=1, col=1)
+
+            if len(sells) > 0:
+                hover_sell = [
+                    f"<b>SELL {r.symbol}</b><br>${r.sell_price:,.2f}  P&L: {r.pnl_pct:+.1f}%"
+                    for _, r in sells.iterrows()
+                ]
+                fig.add_trace(go.Scatter(
+                    x=pd.to_datetime(sells["sell_date"]),
+                    y=sells["sell_price"],
+                    mode="markers",
+                    marker=dict(
+                        symbol="triangle-down", size=16, color=RED,
+                        line=dict(color="white", width=1.5),
+                    ),
+                    name="Your Sell",
+                    hovertemplate="%{text}<extra></extra>",
+                    text=hover_sell,
+                ), row=1, col=1)
+
+    # Volume bars
+    if rows == 2 and "Volume" in hist.columns:
+        vol_colors = [GREEN if c >= o else RED
+                      for c, o in zip(hist["Close"], hist["Open"])]
+        fig.add_trace(go.Bar(
+            x=hist.index, y=hist["Volume"],
+            marker_color=vol_colors,
+            marker_opacity=0.5,
+            name="Volume",
+            hovertemplate="Vol: %{y:,.0f}<extra></extra>",
+        ), row=2, col=1)
+
+    # Layout
+    fig.update_xaxes(**_axis_style(show_grid=False))
+    fig.update_yaxes(**_axis_style(show_grid=True))
+    if rows == 2:
+        fig.update_yaxes(title_text="Price ($)", row=1, col=1, title_font=dict(size=11, color="#8892a4"))
+        fig.update_yaxes(title_text="Volume", row=2, col=1, showticklabels=False, title_font=dict(size=10, color="#8892a4"))
+    fig.update_layout(
+        **_base_layout(margin=dict(t=16, b=8, l=8, r=8)),
+        showlegend=True,
+    )
+    return fig
+
+
+def build_pnl_timeline(trades_df: pd.DataFrame) -> go.Figure:
+    """Cumulative P&L area chart with individual trade hover markers."""
+    if trades_df is None or trades_df.empty:
+        return go.Figure()
+    df = trades_df.sort_values("sell_date").copy()
+    df["cumulative"] = df["pnl_dollar"].cumsum()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["sell_date"], y=df["cumulative"],
+        fill="tozeroy",
+        fillcolor="rgba(0,212,170,0.1)",
+        line=dict(color=GREEN, width=2.5),
+        mode="lines",
+        name="Cumulative P&L",
+        hovertemplate="<b>%{x|%b %d '%y}</b>  Cumulative: $%{y:,.0f}<extra></extra>",
+    ))
+
+    wins = df[df["win"]]
+    losses = df[~df["win"]]
+
+    if len(wins) > 0:
+        fig.add_trace(go.Scatter(
+            x=wins["sell_date"], y=wins["cumulative"],
+            mode="markers",
+            marker=dict(color=GREEN, size=8, opacity=0.8, line=dict(color="white", width=1)),
+            name="Win",
+            hovertemplate="<b>%{customdata[0]}</b><br>+$%{customdata[1]:,.0f} (+%{customdata[2]:.1f}%)<extra></extra>",
+            customdata=np.stack([wins["symbol"], wins["pnl_dollar"], wins["pnl_pct"]], axis=-1),
+        ))
+
+    if len(losses) > 0:
+        fig.add_trace(go.Scatter(
+            x=losses["sell_date"], y=losses["cumulative"],
+            mode="markers",
+            marker=dict(color=RED, size=8, opacity=0.8, line=dict(color="white", width=1)),
+            name="Loss",
+            hovertemplate="<b>%{customdata[0]}</b><br>$%{customdata[1]:,.0f} (%{customdata[2]:.1f}%)<extra></extra>",
+            customdata=np.stack([losses["symbol"], losses["pnl_dollar"], losses["pnl_pct"]], axis=-1),
+        ))
+
+    fig.add_hline(y=0, line_color="rgba(255,255,255,0.15)", line_dash="dash")
+    fig.update_xaxes(**_axis_style(show_grid=False))
+    fig.update_yaxes(**_axis_style(show_grid=True), tickprefix="$")
+    fig.update_layout(**_base_layout(title="Cumulative P&L  ·  Hover trades for detail"))
+    return fig
+
+
+def build_breakdown_chart(data: Any, group_col: str, title: str) -> go.Figure | None:
+    if data is None:
+        return None
+    df = pd.DataFrame(data) if isinstance(data, list) else data.copy()
+    if df.empty or group_col not in df.columns or "win_rate_pct" not in df.columns:
+        return None
+    df[group_col] = df[group_col].astype(str)
+    df = df[df[group_col] != "nan"].sort_values("win_rate_pct", ascending=True)
+
+    bar_colors = [
+        GREEN if v >= 55 else AMBER if v >= 45 else RED
+        for v in df["win_rate_pct"]
+    ]
+    fig = go.Figure(go.Bar(
+        x=df["win_rate_pct"], y=df[group_col], orientation="h",
+        marker_color=bar_colors,
+        text=df["win_rate_pct"].apply(lambda v: f"{v:.0f}%"),
+        textposition="outside",
+        hovertemplate=(
+            "<b>%{y}</b><br>Win Rate: %{x:.1f}%<br>"
+            + (f"Avg P&L: %{{customdata:.1f}}%" if "avg_pnl_pct" in df.columns else "")
+            + "<extra></extra>"
+        ),
+        customdata=df["avg_pnl_pct"].values if "avg_pnl_pct" in df.columns else None,
+    ))
+    fig.add_vline(x=50, line_color="rgba(255,255,255,0.2)", line_dash="dash", annotation_text="50%", annotation_font_size=10)
+    fig.update_xaxes(**_axis_style(show_grid=False), range=[0, 115])
+    fig.update_yaxes(**_axis_style(show_grid=False))
+    fig.update_layout(**_base_layout(title=title, margin=dict(t=36, b=8, l=8, r=32)))
+    return fig
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TOOL EXECUTION
+# ══════════════════════════════════════════════════════════════════════════════
 def _execute_tool(name: str, tool_input: dict, use_demo: bool) -> str:
     try:
         if name == "get_portfolio":
-            if use_demo:
-                result: Any = {"portfolio": _demo_portfolio(), "positions": _demo_positions()}
-            else:
-                from auth.robinhood import login
-                from portfolio.tracker import get_portfolio, get_positions
-                if not login():
-                    result = {"error": "Robinhood login failed"}
-                else:
-                    pos = get_positions()
-                    result = {
-                        "portfolio": get_portfolio(),
-                        "positions": pos.to_dict(orient="records") if hasattr(pos, "to_dict") else pos,
-                    }
+            result: Any = (
+                {"portfolio": _demo_portfolio(), "positions": _demo_positions()}
+                if use_demo else _live_portfolio()
+            )
 
         elif name == "analyze_trades":
-            if use_demo:
-                trades = _demo_trades()
-            else:
-                from auth.robinhood import login
-                from portfolio.tracker import get_order_history
-                from portfolio.analyzer import build_trade_pairs
-                if not login():
-                    return json.dumps({"error": "Robinhood login failed"})
-                orders = get_order_history(limit=500)
-                trades = build_trade_pairs(orders)
+            trades = _demo_trades() if use_demo else _live_trades()
             from portfolio.analyzer import analyze_process
             raw = analyze_process(trades)
-            result = {}
-            for k, v in raw.items():
-                if isinstance(v, pd.DataFrame):
-                    result[k] = v.to_dict(orient="records")
-                elif isinstance(v, (np.integer, np.floating)):
-                    result[k] = float(v)
-                else:
-                    result[k] = v
+            result = {
+                k: (v.to_dict(orient="records") if isinstance(v, pd.DataFrame)
+                    else float(v) if isinstance(v, (np.integer, np.floating)) else v)
+                for k, v in raw.items()
+            }
 
         elif name == "screen_market":
-            if use_demo:
-                result = {"candidates": _demo_candidates().to_dict(orient="records")}
-            else:
-                from market.screener import build_candidate_universe, screen_candidates
-                syms = build_candidate_universe()
-                cands = screen_candidates(syms, {})
-                result = {"candidates": cands.to_dict(orient="records") if hasattr(cands, "to_dict") else cands}
+            result = (
+                {"candidates": _demo_candidates().to_dict(orient="records")}
+                if use_demo else _live_screen()
+            )
 
         elif name == "get_recommendations":
-            candidates = pd.DataFrame(json.loads(tool_input.get("candidates_json", "[]")))
+            cands = pd.DataFrame(json.loads(tool_input.get("candidates_json", "[]")))
             stats = json.loads(tool_input.get("stats_json", "{}"))
-            for key in ("by_sector","by_hold_bucket","by_rsi_band","by_entry_regime","by_market_cap","best_trades","worst_trades"):
+            for key in ("by_sector","by_hold_bucket","by_rsi_band","by_entry_regime","by_market_cap"):
                 if key in stats and isinstance(stats[key], list):
                     stats[key] = pd.DataFrame(stats[key])
             from recommendations.engine import score_candidates, score_options_candidates
-            recs = score_candidates(candidates, stats)
-            opts = score_options_candidates(candidates, stats)
+            recs = score_candidates(cands, stats)
+            opts = score_options_candidates(cands, stats)
             result = {
                 "stock_recommendations": recs.to_dict(orient="records") if not recs.empty else [],
                 "options_recommendations": opts[["symbol","score","options_strategy","options_rationale"]].to_dict(orient="records") if not opts.empty else [],
@@ -273,11 +565,41 @@ def _execute_tool(name: str, tool_input: dict, use_demo: bool) -> str:
             result = {"error": f"Unknown tool: {name}"}
     except Exception as exc:
         result = {"error": str(exc)}
-
     return json.dumps(result, default=str)
 
 
-# ── Agent turn ────────────────────────────────────────────────────────────────
+def _live_portfolio() -> dict:
+    from auth.robinhood import login
+    from portfolio.tracker import get_portfolio, get_positions
+    if not login():
+        return {"error": "Login failed"}
+    pos = get_positions()
+    return {
+        "portfolio": get_portfolio(),
+        "positions": pos.to_dict(orient="records") if hasattr(pos, "to_dict") else pos,
+    }
+
+
+def _live_trades() -> pd.DataFrame:
+    from auth.robinhood import login
+    from portfolio.tracker import get_order_history
+    from portfolio.analyzer import build_trade_pairs
+    if not login():
+        return pd.DataFrame()
+    orders = get_order_history(limit=500)
+    return build_trade_pairs(orders) if not orders.empty else pd.DataFrame()
+
+
+def _live_screen() -> dict:
+    from market.screener import build_candidate_universe, screen_candidates
+    syms = build_candidate_universe()
+    cands = screen_candidates(syms, {})
+    return {"candidates": cands.to_dict(orient="records") if hasattr(cands, "to_dict") else cands}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AGENT
+# ══════════════════════════════════════════════════════════════════════════════
 def run_agent_turn(client: anthropic.Anthropic, user_message: str) -> tuple[str, list[str]]:
     use_demo = st.session_state.use_demo
     msgs = list(st.session_state.api_messages)
@@ -286,18 +608,13 @@ def run_agent_turn(client: anthropic.Anthropic, user_message: str) -> tuple[str,
 
     while True:
         response = client.messages.create(
-            model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM,
-            tools=TOOLS,
-            messages=msgs,
+            model=MODEL, max_tokens=4096, system=SYSTEM, tools=TOOLS, messages=msgs,
         )
         msgs.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason == "end_turn":
             st.session_state.api_messages = msgs
-            text = next((b.text for b in response.content if b.type == "text" and b.text), "")
-            return text, tools_used
+            return next((b.text for b in response.content if b.type == "text" and b.text), ""), tools_used
 
         if response.stop_reason == "tool_use":
             tool_results = []
@@ -305,75 +622,68 @@ def run_agent_turn(client: anthropic.Anthropic, user_message: str) -> tuple[str,
                 if block.type == "tool_use":
                     tools_used.append(block.name)
                     result_str = _execute_tool(block.name, block.input, use_demo)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result_str,
-                    })
+                    tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result_str})
             msgs.append({"role": "user", "content": tool_results})
             continue
 
         st.session_state.api_messages = msgs
-        text = next((b.text for b in response.content if b.type == "text" and b.text), "")
-        return text, tools_used
+        return next((b.text for b in response.content if b.type == "text" and b.text), ""), tools_used
 
 
-# ── Data loading ──────────────────────────────────────────────────────────────
-def load_all_data() -> None:
+# ══════════════════════════════════════════════════════════════════════════════
+# DATA LOADING
+# ══════════════════════════════════════════════════════════════════════════════
+def load_all_data() -> bool:
     use_demo = st.session_state.use_demo
-    with st.spinner("Loading data..."):
+    try:
         if use_demo:
             st.session_state.portfolio = _demo_portfolio()
             st.session_state.positions = pd.DataFrame(_demo_positions())
             trades = _demo_trades()
         else:
-            try:
-                from auth.robinhood import login
-                from portfolio.tracker import get_portfolio, get_positions, get_order_history
-                from portfolio.analyzer import build_trade_pairs
-                if not login():
-                    st.error("Robinhood login failed. Check credentials in the sidebar.")
-                    return
-                st.session_state.portfolio = get_portfolio()
-                raw_pos = get_positions()
-                st.session_state.positions = raw_pos if hasattr(raw_pos, "columns") else pd.DataFrame(raw_pos)
-                orders = get_order_history(limit=500)
-                if orders.empty:
-                    st.warning("No completed orders found — using demo trade data for analysis.")
-                    trades = _demo_trades()
-                else:
-                    trades = build_trade_pairs(orders)
-            except Exception as exc:
-                st.error(f"Error connecting: {exc}")
-                return
+            from auth.robinhood import login
+            from portfolio.tracker import get_portfolio, get_positions, get_order_history
+            from portfolio.analyzer import build_trade_pairs
+            if not login():
+                st.error("Robinhood login failed. Check credentials.")
+                return False
+            st.session_state.portfolio = get_portfolio()
+            raw_pos = get_positions()
+            st.session_state.positions = raw_pos if hasattr(raw_pos, "columns") else pd.DataFrame(raw_pos)
+            orders = get_order_history(limit=500)
+            trades = build_trade_pairs(orders) if not orders.empty else _demo_trades()
 
         st.session_state.trades_df = trades
-
         from portfolio.analyzer import analyze_process
         st.session_state.stats = analyze_process(trades)
 
-        # Candidates (demo instant; live requires manual trigger)
         if use_demo:
             st.session_state.candidates = _demo_candidates()
-            _compute_recommendations()
+            _compute_recs()
 
         st.session_state.data_loaded = True
+        return True
+    except Exception as exc:
+        st.error(f"Error loading data: {exc}")
+        return False
 
 
-def _compute_recommendations() -> None:
+def _compute_recs() -> None:
     cands = st.session_state.candidates
     stats = st.session_state.stats
-    if cands is None or cands.empty or not stats:
+    if cands is None or (hasattr(cands, "empty") and cands.empty) or not stats:
         return
     try:
         from recommendations.engine import score_candidates, score_options_candidates
         st.session_state.recs = score_candidates(cands, stats)
         st.session_state.opts_recs = score_options_candidates(cands, stats)
-    except Exception as exc:
-        st.warning(f"Recommendations unavailable: {exc}")
+    except Exception:
+        pass
 
 
-# ── Formatting helpers ────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# UI HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
 def fmt_pct(v: float) -> str:
     return f"+{v:.1f}%" if v > 0 else f"{v:.1f}%"
 
@@ -382,433 +692,735 @@ def fmt_dollar(v: float) -> str:
     return f"+${v:,.0f}" if v > 0 else f"-${abs(v):,.0f}"
 
 
-def _plotly_base() -> dict:
-    return dict(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#e8eaf0"),
-        margin=dict(t=40, b=30, l=10, r=10),
+def trend_badge(trend: str) -> str:
+    if "Up" in trend:
+        return f'<span class="badge-bull">{trend}</span>'
+    elif "Down" in trend:
+        return f'<span class="badge-bear">{trend}</span>'
+    return f'<span class="badge-neutral">{trend}</span>'
+
+
+def score_html(score: float) -> str:
+    color = GREEN if score >= 65 else AMBER if score >= 45 else RED
+    return (
+        f'<div class="score-bar-wrap">'
+        f'<div class="score-bar" style="width:{score:.0f}%;background:{color};"></div>'
+        f'</div><div style="font-size:0.8rem;color:{color};margin-top:2px;">{score:.0f}/100</div>'
     )
 
 
-GREEN = "#00d4aa"
-RED = "#ff5566"
-AMBER = "#ffaa00"
-BLUE = "#4488ff"
-TEAL_SCALE = [RED, AMBER, GREEN]
+def rsi_color(rsi: float) -> str:
+    if rsi < 30:
+        return GREEN   # oversold = buy opportunity
+    elif rsi > 70:
+        return RED     # overbought = caution
+    return "#e8eaf0"
+
+
+def _position_card(pos: dict) -> None:
+    sym = pos.get("symbol", "")
+    name = pos.get("name", sym)
+    qty = pos.get("quantity", 0)
+    price = pos.get("current_price", 0)
+    total_ret = pos.get("total_return", 0)
+    ret_pct = pos.get("return_pct", 0)
+    day_ret = pos.get("day_return_pct", 0)
+    mktval = pos.get("market_value", 0)
+    ret_class = "pos-ret-pos" if ret_pct >= 0 else "pos-ret-neg"
+    day_class = "pos-ret-pos" if day_ret >= 0 else "pos-ret-neg"
+    st.markdown(f"""
+    <div class="pos-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div class="pos-sym">{sym}</div>
+          <div class="pos-name">{name}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="pos-price">${price:,.2f}</div>
+          <div class="{day_class}">Today: {fmt_pct(day_ret)}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;">
+        <div class="pos-meta">{qty:.0f} shares · ${mktval:,.0f}</div>
+        <div class="{ret_class}">{fmt_pct(ret_pct)} ({fmt_dollar(total_ret)})</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def _rec_card(rec: pd.Series, col_idx: int) -> None:
+    sym = rec.get("symbol", "")
+    name = rec.get("name", sym)
+    score = float(rec.get("score", 0))
+    price = rec.get("current_price", 0)
+    rsi = rec.get("rsi", 50)
+    trend = str(rec.get("trend", ""))
+    rationale = rec.get("rationale", "")
+    mom = rec.get("momentum_20d", 0)
+    color = GREEN if score >= 65 else AMBER if score >= 45 else RED
+    st.markdown(f"""
+    <div class="pos-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div>
+          <div class="pos-sym">{sym}</div>
+          <div class="pos-name">{name}</div>
+        </div>
+        <div style="text-align:right;color:{color};font-size:1.4rem;font-weight:800;">{score:.0f}</div>
+      </div>
+      {score_html(score)}
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        {trend_badge(trend)}
+        <span class="badge-neutral">RSI {rsi:.0f}</span>
+        <span class="{'badge-bull' if mom >= 0 else 'badge-bear'}">{'▲' if mom >= 0 else '▼'} {abs(mom):.1f}%</span>
+      </div>
+      <div style="margin-top:8px;font-size:0.78rem;color:#8892a4;line-height:1.4;">{rationale}</div>
+      <div style="margin-top:6px;font-size:0.85rem;color:#c8d0e0;">${price:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
+# TOP NAV / HEADER
+# ══════════════════════════════════════════════════════════════════════════════
+hdr_l, hdr_r = st.columns([3, 1])
+with hdr_l:
+    st.markdown("<h2 style='margin:0;padding:0;color:#fff;letter-spacing:-0.5px;'>📈 Sodil</h2>", unsafe_allow_html=True)
+    st.caption("Quantitative Investment Intelligence")
+with hdr_r:
+    mode = st.radio("", ["Demo", "Live"], horizontal=True,
+                    index=0 if st.session_state.use_demo else 1, key="top_mode")
+    if (mode == "Demo") != st.session_state.use_demo:
+        st.session_state.use_demo = (mode == "Demo")
+        st.session_state.data_loaded = False
+        st.rerun()
+
+st.divider()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR (credentials + load button)
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 📈 Sodil")
-    st.caption("Quantitative Investment Intelligence")
-    st.divider()
+    st.markdown("### Settings")
 
-    mode = st.radio("Data Source", ["Demo", "Live"], horizontal=True,
-                    index=0 if st.session_state.use_demo else 1)
-    use_demo = mode == "Demo"
-    if use_demo != st.session_state.use_demo:
-        st.session_state.use_demo = use_demo
-        st.session_state.data_loaded = False
-
-    if not use_demo:
+    if not st.session_state.use_demo:
         with st.expander("Robinhood Credentials", expanded=True):
             rh_user = st.text_input("Email", placeholder="you@example.com")
             rh_pass = st.text_input("Password", type="password")
-            rh_mfa = st.text_input("MFA Secret (optional)", placeholder="base32 TOTP")
-            if rh_user:
-                os.environ["RH_USERNAME"] = rh_user
-            if rh_pass:
-                os.environ["RH_PASSWORD"] = rh_pass
-            if rh_mfa:
-                os.environ["RH_MFA_SECRET"] = rh_mfa
-
-    st.divider()
+            rh_mfa  = st.text_input("MFA Secret (optional)")
+            if rh_user: os.environ["RH_USERNAME"] = rh_user
+            if rh_pass: os.environ["RH_PASSWORD"] = rh_pass
+            if rh_mfa:  os.environ["RH_MFA_SECRET"] = rh_mfa
 
     api_key_input = st.text_input(
         "Anthropic API Key",
         value=os.getenv("ANTHROPIC_API_KEY", ""),
         type="password",
-        help="Required for the AI Chat tab",
+        help="For AI Advisor tab",
     )
     if api_key_input:
         os.environ["ANTHROPIC_API_KEY"] = api_key_input
 
     st.divider()
+    btn_label = "Load Demo Data" if st.session_state.use_demo else "Connect & Load"
+    if st.button(btn_label, type="primary", use_container_width=True):
+        with st.spinner("Loading..."):
+            load_all_data()
 
-    if st.button("Load / Refresh Data", type="primary", use_container_width=True):
-        load_all_data()
-
-    if not st.session_state.data_loaded:
-        st.info("Click **Load / Refresh Data** to begin.")
+    if st.session_state.data_loaded:
+        st.success("✓ Data ready")
     else:
-        st.success("Data loaded")
-        if st.session_state.use_demo:
-            st.caption("Demo mode — synthetic data")
-        else:
-            st.caption("Live mode — Robinhood")
+        st.info("Click above to load data")
+
+    st.divider()
+    st.caption("**Watchlist**")
+    new_ticker = st.text_input("Add ticker", placeholder="e.g. TSLA", key="wl_add").upper()
+    if new_ticker and new_ticker not in st.session_state.watchlist:
+        if st.button("Add"):
+            st.session_state.watchlist.append(new_ticker)
+    for wl_sym in st.session_state.watchlist:
+        if st.button(f"📊 {wl_sym}", key=f"wl_{wl_sym}", use_container_width=True):
+            st.session_state.research_ticker = wl_sym
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN TABS
 # ══════════════════════════════════════════════════════════════════════════════
-tab_port, tab_trades, tab_screen, tab_recs, tab_chat = st.tabs([
-    "📊  Portfolio",
-    "🔬  Trade Analysis",
-    "🔍  Screener",
-    "💡  Recommendations",
-    "🤖  AI Chat",
+tab_home, tab_research, tab_trades, tab_opps, tab_ai = st.tabs([
+    "🏠  Portfolio",
+    "🔎  Research",
+    "📊  My Trades",
+    "🎯  Opportunities",
+    "🤖  AI Advisor",
 ])
 
-# ── TAB 1: Portfolio ──────────────────────────────────────────────────────────
-with tab_port:
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — PORTFOLIO (Robinhood-style)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_home:
     if not st.session_state.data_loaded:
-        st.markdown("### Welcome to Sodil")
-        st.markdown(
-            "Use the sidebar to select **Demo** (no credentials needed) or **Live** mode, "
-            "then click **Load / Refresh Data** to populate the dashboard."
-        )
+        st.markdown("""
+        ### Welcome to Sodil
+
+        The smarter way to understand your trades and find your next move.
+
+        **To get started:**
+        1. Choose **Demo** (top right) to explore with sample data — no credentials needed
+        2. Click **Load Demo Data** in the sidebar
+        3. Explore your portfolio, research stocks, and ask the AI anything
+        """)
     else:
         p = st.session_state.portfolio or {}
         pos_df = st.session_state.positions
+        trades_df = st.session_state.trades_df
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Equity", f"${p.get('equity', 0):,.2f}")
-        c2.metric("Cash", f"${p.get('cash', 0):,.2f}")
-        c3.metric("Buying Power", f"${p.get('buying_power', 0):,.2f}")
-        ret = p.get("total_return_pct", 0)
-        c4.metric("Total Return", fmt_pct(ret), delta=fmt_pct(ret))
+        # ── Big equity number ──────────────────────────────────────────────────
+        equity = p.get("equity", 0)
+        ret_pct = p.get("total_return_pct", 0)
+        ret_color = GREEN if ret_pct >= 0 else RED
+        st.markdown(f"""
+        <div style="margin-bottom:20px;">
+          <div style="font-size:2.8rem;font-weight:800;color:#fff;letter-spacing:-1px;">
+            ${equity:,.2f}
+          </div>
+          <div style="font-size:1.1rem;color:{ret_color};font-weight:600;">
+            {fmt_pct(ret_pct)} total return
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        if st.session_state.trades_df is not None:
-            risk = compute_risk_metrics(st.session_state.trades_df)
-            r1, r2, r3, r4 = st.columns(4)
-            r1.metric("Sharpe Ratio", f"{risk.get('sharpe', 0):.2f}", help="Annualized trade-level Sharpe")
-            r2.metric("Profit Factor", f"{risk.get('profit_factor', 0):.2f}", help="Gross profit / gross loss")
-            r3.metric("Expectancy", f"{risk.get('expectancy_pct', 0):+.1f}%", help="Average expected return per trade")
-            r4.metric("Max Drawdown", f"-{risk.get('max_drawdown_pct', 0):.1f}%")
+        # ── KPI row ────────────────────────────────────────────────────────────
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("Cash", f"${p.get('cash',0):,.0f}")
+        k2.metric("Buying Power", f"${p.get('buying_power',0):,.0f}")
+        risk = compute_risk_metrics(trades_df)
+        k3.metric("Sharpe Ratio", f"{risk.get('sharpe',0):.2f}", help="Annualized trade Sharpe")
+        k4.metric("Profit Factor", f"{risk.get('profit_factor',0):.2f}", help="Gross wins / gross losses")
+        k5.metric("Max Drawdown", f"-{risk.get('max_drawdown_pct',0):.1f}%")
 
         st.divider()
 
+        # ── Portfolio chart (reconstructed from cumulative P&L) ────────────────
+        if trades_df is not None and not trades_df.empty:
+            fig_port = build_pnl_timeline(trades_df)
+            st.plotly_chart(fig_port, use_container_width=True, config={"displayModeBar": False})
+        else:
+            # Fallback: allocation pie only
+            pass
+
+        st.divider()
+
+        # ── Position cards ─────────────────────────────────────────────────────
+        st.markdown("#### Positions")
         if pos_df is not None and len(pos_df) > 0:
-            df = pos_df.copy() if hasattr(pos_df, "copy") else pd.DataFrame(pos_df)
+            df = pos_df if hasattr(pos_df, "iterrows") else pd.DataFrame(pos_df)
+            pos_list = df.to_dict(orient="records")
+            n = len(pos_list)
+            cols_per_row = 3
+            for row_start in range(0, n, cols_per_row):
+                row_items = pos_list[row_start: row_start + cols_per_row]
+                cols = st.columns(cols_per_row)
+                for col, pos in zip(cols, row_items):
+                    with col:
+                        _position_card(pos)
+                        if st.button(f"Research {pos['symbol']}", key=f"res_{pos['symbol']}", use_container_width=True):
+                            st.session_state.research_ticker = pos["symbol"]
+                            # Jump to research tab happens on next rerun
+        else:
+            st.caption("No positions loaded.")
 
-            left, right = st.columns([1, 2])
-            with left:
-                fig_pie = px.pie(
-                    df, values="market_value", names="symbol",
-                    title="Allocation",
-                    color_discrete_sequence=px.colors.qualitative.Safe,
-                    hole=0.45,
-                )
-                fig_pie.update_traces(textposition="inside", textinfo="percent+label")
-                fig_pie.update_layout(**_plotly_base(), showlegend=False)
-                st.plotly_chart(fig_pie, use_container_width=True)
-
-            with right:
-                colors = [GREEN if v >= 0 else RED for v in df["total_return"]]
-                fig_pnl = go.Figure(go.Bar(
-                    x=df["symbol"],
-                    y=df["total_return"],
-                    marker_color=colors,
-                    text=df["return_pct"].apply(lambda v: fmt_pct(v)),
-                    textposition="outside",
-                    hovertemplate="<b>%{x}</b><br>P&L: $%{y:,.0f}<extra></extra>",
+        # ── Allocation pie ────────────────────────────────────────────────────
+        if pos_df is not None and len(pos_df) > 0:
+            st.divider()
+            pie_col, _ = st.columns([1, 1])
+            with pie_col:
+                df2 = pos_df if hasattr(pos_df, "columns") else pd.DataFrame(pos_df)
+                fig_pie = go.Figure(go.Pie(
+                    labels=df2["symbol"], values=df2["market_value"],
+                    hole=0.5,
+                    marker=dict(
+                        colors=px.colors.qualitative.Safe,
+                        line=dict(color="#0a0e1a", width=2),
+                    ),
+                    textinfo="label+percent",
+                    textposition="inside",
                 ))
-                fig_pnl.update_layout(
-                    title="Total Return by Position",
-                    yaxis_title="P&L ($)",
-                    **_plotly_base(),
+                fig_pie.update_layout(
+                    **_base_layout(title="Portfolio Allocation", margin=dict(t=36, b=8, l=8, r=8)),
+                    showlegend=False,
                 )
-                st.plotly_chart(fig_pnl, use_container_width=True)
-
-            st.subheader("Positions")
-            display = df[["symbol","quantity","avg_cost","current_price","market_value","total_return","return_pct"]].copy()
-            display.columns = ["Symbol","Qty","Avg Cost","Price","Value","Total P&L","Return %"]
-
-            def _style_num(val):
-                try:
-                    return f"color: {GREEN}" if float(val) > 0 else f"color: {RED}"
-                except Exception:
-                    return ""
-
-            styled = (
-                display.style
-                .applymap(_style_num, subset=["Total P&L", "Return %"])
-                .format({
-                    "Avg Cost": "${:,.2f}",
-                    "Price": "${:,.2f}",
-                    "Value": "${:,.2f}",
-                    "Total P&L": "${:,.2f}",
-                    "Return %": "{:+.1f}%",
-                    "Qty": "{:.0f}",
-                })
-            )
-            st.dataframe(styled, use_container_width=True, hide_index=True)
+                st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
 
-# ── TAB 2: Trade Analysis ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — RESEARCH (Stock Picker + Trade Visualization)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_research:
+    st.markdown("#### Research Any Stock")
+    st.caption("Your historical trades appear as ▲ buy / ▼ sell markers on the chart.")
+
+    # ── Search row ────────────────────────────────────────────────────────────
+    s_col, p_col = st.columns([2, 3])
+    with s_col:
+        ticker_input = st.text_input(
+            "Ticker symbol",
+            value=st.session_state.research_ticker,
+            placeholder="NVDA, AAPL, TSLA...",
+            label_visibility="collapsed",
+        ).upper().strip()
+        if ticker_input:
+            st.session_state.research_ticker = ticker_input
+
+    with p_col:
+        period_label = st.radio(
+            "Period", list(PERIOD_MAP.keys()), index=4,
+            horizontal=True, label_visibility="collapsed",
+            key="research_period_radio",
+        )
+
+    symbol = st.session_state.research_ticker
+    yf_period = PERIOD_MAP[period_label]
+
+    if symbol:
+        with st.spinner(f"Loading {symbol}..."):
+            hist, info = fetch_chart(symbol, yf_period)
+            techs = fetch_technicals(symbol)
+
+        if hist.empty:
+            st.error(f"No data found for **{symbol}**. Check the ticker and try again.")
+        else:
+            # ── Price header ──────────────────────────────────────────────────
+            cur_price = float(hist["Close"].iloc[-1]) if "Close" in hist.columns else 0
+            first_price = float(hist["Close"].iloc[0]) if "Close" in hist.columns else 0
+            chg = cur_price - first_price
+            chg_pct = (chg / first_price * 100) if first_price != 0 else 0
+            is_pos = chg >= 0
+            chg_color = GREEN if is_pos else RED
+            name = info.get("longName") or info.get("shortName") or symbol
+
+            st.markdown(f"""
+            <div style="margin-bottom:16px;">
+              <div style="font-size:1.2rem;color:#8892a4;margin-bottom:2px;">{name}</div>
+              <div style="display:flex;align-items:baseline;gap:16px;">
+                <span style="font-size:2.2rem;font-weight:800;color:#fff;">${cur_price:,.2f}</span>
+                <span style="font-size:1.1rem;font-weight:600;color:{chg_color};">
+                  {'+' if chg >= 0 else ''}{chg:,.2f} ({chg_pct:+.2f}%) {period_label}
+                </span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ── Main chart ────────────────────────────────────────────────────
+            trades_for_overlay = st.session_state.trades_df if st.session_state.data_loaded else None
+            fig_stock = build_price_chart(hist, symbol, trades_for_overlay, show_volume=True)
+            st.plotly_chart(fig_stock, use_container_width=True, config={"displayModeBar": False})
+
+            # ── Technicals row ────────────────────────────────────────────────
+            if techs:
+                st.divider()
+                st.markdown("##### Technical Snapshot")
+                t1, t2, t3, t4, t5, t6 = st.columns(6)
+
+                rsi_val = techs.get("rsi", 50)
+                rsi_col = GREEN if rsi_val < 40 else RED if rsi_val > 70 else "#fff"
+                t1.metric("RSI (14)", f"{rsi_val:.1f}")
+                t2.metric("Trend", techs.get("trend", "—"))
+                t3.metric("20d Momentum", f"{techs.get('momentum_20d', 0):+.1f}%")
+                t4.metric("MACD", "Bullish ✓" if techs.get("macd_bullish") else "Bearish ✗")
+                t5.metric("Volatility", f"{techs.get('volatility_20d', 0):.1f}%")
+                t6.metric("Price vs SMA50", "Above ▲" if techs.get("above_sma50") else "Below ▼")
+
+                # Signal badges
+                signals = []
+                rsi_v = techs.get("rsi", 50)
+                if rsi_v < 35:   signals.append(("Oversold — potential entry", "bull"))
+                elif rsi_v > 70: signals.append(("Overbought — caution", "bear"))
+                if techs.get("macd_bullish"): signals.append(("MACD Bullish Cross", "bull"))
+                if techs.get("above_sma50") and techs.get("above_sma200", True):
+                    signals.append(("Above SMA50 & SMA200", "bull"))
+                if techs.get("momentum_20d", 0) > 10: signals.append(("Strong momentum", "bull"))
+                if techs.get("momentum_20d", 0) < -10: signals.append(("Weak momentum", "bear"))
+
+                if signals:
+                    badge_html = " ".join(f'<span class="badge-{cls}">{msg}</span>' for msg, cls in signals)
+                    st.markdown(badge_html, unsafe_allow_html=True)
+
+            # ── Your history with this stock ──────────────────────────────────
+            if st.session_state.data_loaded and st.session_state.trades_df is not None:
+                sym_trades = st.session_state.trades_df[
+                    st.session_state.trades_df["symbol"] == symbol
+                ].copy()
+                if len(sym_trades) > 0:
+                    st.divider()
+                    st.markdown(f"##### Your {symbol} Trade History")
+                    total_pnl = sym_trades["pnl_dollar"].sum()
+                    wr = sym_trades["win"].mean()
+                    h1, h2, h3 = st.columns(3)
+                    h1.metric("Trades", len(sym_trades))
+                    h2.metric("Win Rate", f"{wr*100:.0f}%")
+                    h3.metric("Total P&L", fmt_dollar(total_pnl))
+
+                    display = sym_trades[["buy_date","sell_date","hold_days","buy_price","sell_price","quantity","pnl_dollar","pnl_pct"]].copy()
+                    display.columns = ["Buy Date","Sell Date","Hold (d)","Buy $","Sell $","Qty","P&L $","P&L %"]
+                    display["Buy Date"] = pd.to_datetime(display["Buy Date"]).dt.strftime("%b %d '%y")
+                    display["Sell Date"] = pd.to_datetime(display["Sell Date"]).dt.strftime("%b %d '%y")
+
+                    def _pnl_style(val):
+                        try:
+                            return f"color: {GREEN}" if float(val) > 0 else f"color: {RED}"
+                        except Exception:
+                            return ""
+
+                    styled = (
+                        display.style
+                        .applymap(_pnl_style, subset=["P&L $", "P&L %"])
+                        .format({"Buy $": "${:,.2f}", "Sell $": "${:,.2f}", "P&L $": "${:,.0f}", "P&L %": "{:+.1f}%", "Qty": "{:.0f}"})
+                    )
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+            # ── AI Quick Analysis ─────────────────────────────────────────────
+            st.divider()
+            api_key = os.getenv("ANTHROPIC_API_KEY", "")
+            if api_key:
+                if st.button(f"🤖 AI Analysis of {symbol}", type="primary"):
+                    stats = st.session_state.stats or {}
+                    edge = stats.get("edge_profile", {})
+                    risk = compute_risk_metrics(st.session_state.trades_df) if st.session_state.trades_df is not None else {}
+                    sym_trades_for_ai = (
+                        st.session_state.trades_df[st.session_state.trades_df["symbol"] == symbol]
+                        if st.session_state.data_loaded and st.session_state.trades_df is not None
+                        else pd.DataFrame()
+                    )
+                    history_note = ""
+                    if len(sym_trades_for_ai) > 0:
+                        history_note = (
+                            f"User has traded {symbol} {len(sym_trades_for_ai)}x. "
+                            f"Win rate: {sym_trades_for_ai['win'].mean()*100:.0f}%, "
+                            f"Avg P&L: {sym_trades_for_ai['pnl_pct'].mean():+.1f}%, "
+                            f"Total P&L: ${sym_trades_for_ai['pnl_dollar'].sum():,.0f}."
+                        )
+                    prompt = f"""Analyze {symbol} ({name}) as a trade opportunity for this specific user.
+
+User edge profile:
+- Best sector: {edge.get('best_sector', 'Not computed')}
+- Best RSI entry band: {edge.get('best_rsi_band', 'Not computed')}
+- Best hold duration: {edge.get('best_hold_duration', 'Not computed')}
+- Overall win rate: {risk.get('win_rate', 0)*100:.0f}%
+- Half-Kelly position size: {risk.get('half_kelly_pct', 0):.1f}% of portfolio
+{history_note}
+
+{symbol} current technicals:
+- Price: ${cur_price:,.2f}
+- RSI: {techs.get('rsi', 'N/A')}
+- Trend: {techs.get('trend', 'N/A')}
+- 20d Momentum: {techs.get('momentum_20d', 'N/A')}%
+- MACD Bullish: {techs.get('macd_bullish', 'N/A')}
+- Volatility: {techs.get('volatility_20d', 'N/A')}%
+
+Give: (1) BUY / HOLD / AVOID verdict, (2) specific entry/exit levels or conditions, (3) how this fits or clashes with their edge. Max 4 sentences. Be direct."""
+                    with st.spinner("Analyzing..."):
+                        try:
+                            client = anthropic.Anthropic(api_key=api_key)
+                            resp = client.messages.create(
+                                model=MODEL, max_tokens=512,
+                                messages=[{"role": "user", "content": prompt}],
+                            )
+                            st.info(resp.content[0].text)
+                        except Exception as exc:
+                            st.error(f"Analysis failed: {exc}")
+            else:
+                st.caption("Add your Anthropic API Key in the sidebar for AI analysis.")
+
+            # ── Fundamentals ──────────────────────────────────────────────────
+            if info:
+                with st.expander("Fundamentals"):
+                    f1, f2, f3, f4 = st.columns(4)
+                    f1.metric("Market Cap", f"${info.get('marketCap',0)/1e9:.1f}B" if info.get('marketCap') else "—")
+                    f2.metric("Fwd P/E", f"{info.get('forwardPE',0):.1f}" if info.get('forwardPE') else "—")
+                    f3.metric("Revenue Growth", f"{info.get('revenueGrowth',0)*100:.1f}%" if info.get('revenueGrowth') else "—")
+                    f4.metric("Beta", f"{info.get('beta',0):.2f}" if info.get('beta') else "—")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — MY TRADES
+# ══════════════════════════════════════════════════════════════════════════════
 with tab_trades:
     if not st.session_state.data_loaded or st.session_state.stats is None:
-        st.info("Load data to see your trade analysis.")
+        st.info("Load data from the sidebar to see your trade analysis.")
     else:
         stats = st.session_state.stats
         trades_df = st.session_state.trades_df
         risk = compute_risk_metrics(trades_df)
 
-        t1, t2, t3, t4, t5 = st.columns(5)
+        # ── KPI row ────────────────────────────────────────────────────────────
         wr = stats.get("win_rate", 0)
-        t1.metric("Win Rate", f"{wr * 100:.1f}%")
+        t1, t2, t3, t4, t5, t6 = st.columns(6)
+        t1.metric("Win Rate", f"{wr*100:.1f}%")
         t2.metric("Total Trades", stats.get("total_trades", 0))
-        t3.metric("Avg P&L / Trade", f"{stats.get('avg_pnl_pct', 0):+.1f}%")
-        t4.metric("Total P&L", fmt_dollar(stats.get("total_pnl", 0)))
-        kelly = risk.get("half_kelly_pct", 0)
-        t5.metric("Half-Kelly Size", f"{kelly:.1f}%", help="Suggested max position size as % of portfolio")
+        t3.metric("Profit Factor", f"{risk.get('profit_factor',0):.2f}")
+        t4.metric("Avg P&L / Trade", f"{stats.get('avg_pnl_pct',0):+.1f}%")
+        t5.metric("Expectancy", f"{risk.get('expectancy_pct',0):+.1f}%")
+        t6.metric("Total P&L", fmt_dollar(stats.get("total_pnl", 0)))
 
         st.divider()
 
-        def _bar_chart(df_or_list, group_col: str, title: str):
-            if df_or_list is None:
-                return
-            df = pd.DataFrame(df_or_list) if isinstance(df_or_list, list) else df_or_list.copy()
-            if df.empty or "win_rate_pct" not in df.columns or group_col not in df.columns:
-                return
-            df[group_col] = df[group_col].astype(str)
-            fig = px.bar(
-                df.sort_values("win_rate_pct"),
-                x="win_rate_pct", y=group_col, orientation="h",
-                title=title,
-                color="win_rate_pct",
-                color_continuous_scale=TEAL_SCALE,
-                range_color=[0, 100],
-                text="win_rate_pct",
+        # ── Half-Kelly insight ─────────────────────────────────────────────────
+        kelly = risk.get("half_kelly_pct", 0)
+        if kelly > 0:
+            st.success(
+                f"**Optimal Position Size (Half-Kelly):** Risk **{kelly:.1f}%** of your portfolio per trade. "
+                f"Based on your {wr*100:.0f}% win rate and {risk.get('avg_win_pct',0):.1f}% avg win / "
+                f"{risk.get('avg_loss_pct',0):.1f}% avg loss."
             )
-            fig.update_traces(texttemplate="%{text:.0f}%", textposition="outside")
-            fig.update_layout(**_plotly_base(), coloraxis_showscale=False, xaxis_range=[0, 110])
-            st.plotly_chart(fig, use_container_width=True)
 
-        row1_l, row1_r = st.columns(2)
-        with row1_l:
-            _bar_chart(stats.get("by_sector"), "sector", "Win Rate by Sector (%)")
-        with row1_r:
-            _bar_chart(stats.get("by_hold_bucket"), "hold_bucket", "Win Rate by Hold Duration (%)")
+        # ── Cumulative P&L chart ───────────────────────────────────────────────
+        fig_pnl = build_pnl_timeline(trades_df)
+        st.plotly_chart(fig_pnl, use_container_width=True, config={"displayModeBar": False})
 
-        row2_l, row2_r = st.columns(2)
-        with row2_l:
-            _bar_chart(stats.get("by_rsi_band"), "rsi_band", "Win Rate by RSI Entry Band (%)")
-        with row2_r:
-            _bar_chart(stats.get("by_entry_regime"), "entry_regime", "Win Rate by Market Regime (%)")
-
-        if trades_df is not None and not trades_df.empty:
-            st.divider()
-            st.subheader("Cumulative P&L")
-            cum = trades_df.sort_values("sell_date")[["sell_date","pnl_dollar"]].copy()
-            cum["Cumulative P&L"] = cum["pnl_dollar"].cumsum()
-            fig_cum = go.Figure()
-            fig_cum.add_trace(go.Scatter(
-                x=cum["sell_date"], y=cum["Cumulative P&L"],
-                fill="tozeroy",
-                line=dict(color=GREEN, width=2),
-                fillcolor="rgba(0,212,170,0.15)",
-                name="Cumulative P&L",
-            ))
-            fig_cum.update_layout(
-                xaxis_title="Date", yaxis_title="P&L ($)",
-                **_plotly_base(),
-            )
-            st.plotly_chart(fig_cum, use_container_width=True)
-
+        # ── Edge profile ───────────────────────────────────────────────────────
         edge = stats.get("edge_profile", {})
         if edge:
             st.divider()
-            st.subheader("Your Statistical Edge")
+            st.markdown("##### Your Statistical Edge")
             e1, e2, e3, e4 = st.columns(4)
-            e1.info(f"**Best Sector**\n\n{edge.get('best_sector', '—')}")
-            e2.info(f"**Best Hold**\n\n{edge.get('best_hold_duration', '—')}")
-            e3.info(f"**Best RSI Entry**\n\n{edge.get('best_rsi_band', '—')}")
-            e4.info(f"**Best Market Cap**\n\n{edge.get('best_market_cap', '—')}")
+            e1.info(f"**Best Sector**\n\n{edge.get('best_sector','—')}")
+            e2.info(f"**Best Hold Duration**\n\n{edge.get('best_hold_duration','—')}")
+            e3.info(f"**Best RSI Entry**\n\n{edge.get('best_rsi_band','—')}")
+            e4.info(f"**Best Market Cap**\n\n{edge.get('best_market_cap','—')}")
 
             pr = stats.get("patience_ratio", 1.0)
             if pr >= 1.2:
-                st.success(f"You let winners run ({pr:.1f}x longer than losers). This is good discipline.")
+                st.success(f"You let winners run {pr:.1f}× longer than losers — excellent trade discipline.")
             elif pr < 0.8:
-                st.warning(f"You cut winners short ({pr:.1f}x hold ratio). Consider wider profit targets.")
+                st.warning(f"You're cutting winners short ({pr:.1f}× ratio). Consider holding winning trades longer.")
+
+        # ── Breakdown charts (2×2 grid) ────────────────────────────────────────
+        st.divider()
+        st.markdown("##### Performance by Condition")
+        row1_l, row1_r = st.columns(2)
+        with row1_l:
+            fig = build_breakdown_chart(stats.get("by_sector"), "sector", "Win Rate by Sector (%)")
+            if fig: st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        with row1_r:
+            fig = build_breakdown_chart(stats.get("by_hold_bucket"), "hold_bucket", "Win Rate by Hold Duration (%)")
+            if fig: st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        row2_l, row2_r = st.columns(2)
+        with row2_l:
+            fig = build_breakdown_chart(stats.get("by_rsi_band"), "rsi_band", "Win Rate by RSI Entry Band (%)")
+            if fig: st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        with row2_r:
+            fig = build_breakdown_chart(stats.get("by_entry_regime"), "entry_regime", "Win Rate by Market Regime (%)")
+            if fig: st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+        # ── Trade log ──────────────────────────────────────────────────────────
+        st.divider()
+        with st.expander("Full Trade Log"):
+            if trades_df is not None and not trades_df.empty:
+                log = trades_df[["symbol","sector","buy_date","sell_date","hold_days","buy_price","sell_price","pnl_dollar","pnl_pct","win"]].copy()
+                log["buy_date"]  = pd.to_datetime(log["buy_date"]).dt.strftime("%b %d '%y")
+                log["sell_date"] = pd.to_datetime(log["sell_date"]).dt.strftime("%b %d '%y")
+                log["win"] = log["win"].map({True: "✓", False: "✗"})
+                log.columns = ["Symbol","Sector","Buy","Sell","Days","Buy $","Sell $","P&L $","P&L %","W"]
+
+                def _pnl_style2(val):
+                    try:
+                        return f"color: {GREEN}" if float(val) > 0 else f"color: {RED}"
+                    except Exception:
+                        return ""
+
+                styled_log = (
+                    log.style
+                    .applymap(_pnl_style2, subset=["P&L $","P&L %"])
+                    .format({"Buy $":"${:,.2f}","Sell $":"${:,.2f}","P&L $":"${:,.0f}","P&L %":"{:+.1f}%"})
+                )
+                st.dataframe(styled_log, use_container_width=True, hide_index=True)
 
 
-# ── TAB 3: Screener ───────────────────────────────────────────────────────────
-with tab_screen:
-    st.subheader("Market Screener")
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — OPPORTUNITIES
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_opps:
     if not st.session_state.data_loaded:
-        st.info("Load data first.")
+        st.info("Load data first to see opportunities.")
     else:
-        if st.session_state.use_demo:
-            cands = _demo_candidates()
-            st.session_state.candidates = cands
-            st.caption("Showing 7 pre-screened demo candidates. Switch to Live mode to run a real screen.")
-        else:
-            if st.button("Run Live Screen (2-3 min)", type="primary"):
-                with st.spinner("Screening 150+ stocks across 10 sectors..."):
+        # Live screener button
+        if not st.session_state.use_demo:
+            if st.button("Run Live Market Screen (2-3 min)", type="primary"):
+                with st.spinner("Screening 150+ stocks..."):
                     try:
                         from market.screener import build_candidate_universe, screen_candidates
                         edge_profile = st.session_state.stats.get("edge_profile", {}) if st.session_state.stats else {}
                         syms = build_candidate_universe()
                         raw = screen_candidates(syms, edge_profile)
-                        cands = raw if hasattr(raw, "columns") else pd.DataFrame(raw)
-                        st.session_state.candidates = cands
-                        _compute_recommendations()
-                        st.success(f"Found {len(cands)} candidates.")
+                        st.session_state.candidates = raw if hasattr(raw, "columns") else pd.DataFrame(raw)
+                        _compute_recs()
+                        st.success(f"Found {len(st.session_state.candidates)} candidates.")
                     except Exception as exc:
                         st.error(f"Screen failed: {exc}")
-                        cands = st.session_state.candidates
-            else:
-                cands = st.session_state.candidates
-
-        if cands is not None and len(cands) > 0:
-            df = cands.copy()
-
-            if "rsi" in df.columns and "momentum_20d" in df.columns:
-                trend_colors = {
-                    "Strong Uptrend": GREEN, "Uptrend": "#66ddbb",
-                    "Sideways": AMBER, "Downtrend": "#ff8888", "Strong Downtrend": RED,
-                }
-                size_col = "volatility_20d" if "volatility_20d" in df.columns else None
-                fig_sc = px.scatter(
-                    df, x="rsi", y="momentum_20d",
-                    text="symbol",
-                    color="trend" if "trend" in df.columns else None,
-                    size=size_col,
-                    size_max=30,
-                    title="RSI vs 20-Day Momentum  (bubble size = volatility)",
-                    labels={"rsi": "RSI", "momentum_20d": "20d Momentum (%)"},
-                    color_discrete_map=trend_colors,
-                )
-                fig_sc.update_traces(textposition="top center", marker=dict(opacity=0.85))
-                fig_sc.add_vline(x=50, line_dash="dot", line_color="gray", opacity=0.4)
-                fig_sc.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.4)
-                fig_sc.update_layout(**_plotly_base())
-                st.plotly_chart(fig_sc, use_container_width=True)
-
-            show_df = df.copy()
-            for col in ["current_price"]:
-                if col in show_df.columns:
-                    show_df[col] = show_df[col].apply(lambda v: f"${v:,.2f}" if pd.notna(v) else "—")
-            for col in ["rsi","momentum_20d","volatility_20d","beta"]:
-                if col in show_df.columns:
-                    show_df[col] = show_df[col].apply(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
-            if "revenue_growth" in show_df.columns:
-                show_df["revenue_growth"] = show_df["revenue_growth"].apply(
-                    lambda v: f"{v * 100:.0f}%" if pd.notna(v) else "—"
-                )
-            if "macd_bullish" in show_df.columns:
-                show_df["macd_bullish"] = show_df["macd_bullish"].map({True: "Yes", False: "No"})
-            st.dataframe(show_df, use_container_width=True, hide_index=True)
-
-
-# ── TAB 4: Recommendations ────────────────────────────────────────────────────
-with tab_recs:
-    st.subheader("Recommendations")
-    if not st.session_state.data_loaded:
-        st.info("Load data first.")
-    else:
-        risk_data = compute_risk_metrics(st.session_state.trades_df) if st.session_state.trades_df is not None else {}
-        kelly = risk_data.get("half_kelly_pct", 0)
-        if kelly > 0:
-            st.info(
-                f"**Position Sizing (Half-Kelly):** Based on your win rate "
-                f"({risk_data.get('win_rate', 0) * 100:.0f}%) and edge, "
-                f"risk **{kelly:.1f}% of portfolio** per trade."
-            )
 
         recs = st.session_state.recs
-        opts = st.session_state.opts_recs
+        risk = compute_risk_metrics(st.session_state.trades_df) if st.session_state.trades_df is not None else {}
 
-        st.subheader("Stock Picks")
-        if recs is None or (hasattr(recs, "empty") and recs.empty):
-            st.caption("No recommendations yet — run the screener or load demo data.")
-        else:
-            recs_df = recs if hasattr(recs, "columns") else pd.DataFrame(recs)
+        # ── Position sizing ────────────────────────────────────────────────────
+        kelly = risk.get("half_kelly_pct", 0)
+        port_equity = (st.session_state.portfolio or {}).get("equity", 50000)
+        if kelly > 0:
+            dollar_size = port_equity * kelly / 100
+            st.info(
+                f"**Sizing Guide (Half-Kelly):** Risk ${dollar_size:,.0f} per trade ({kelly:.1f}% of ${port_equity:,.0f} portfolio). "
+                f"Based on {risk.get('win_rate',0)*100:.0f}% win rate and {risk.get('profit_factor',0):.2f}× profit factor."
+            )
 
-            if "score" in recs_df.columns and "symbol" in recs_df.columns:
-                fig_bar = go.Figure(go.Bar(
-                    x=recs_df["score"].values,
-                    y=recs_df["symbol"].values,
-                    orientation="h",
-                    marker=dict(
-                        color=recs_df["score"].values,
-                        colorscale=[[0, RED], [0.5, AMBER], [1, GREEN]],
-                        showscale=False,
-                    ),
-                    text=[f"{s:.0f}" for s in recs_df["score"].values],
-                    textposition="auto",
-                    hovertemplate="<b>%{y}</b>  Score: %{x:.0f}<extra></extra>",
-                ))
-                fig_bar.update_layout(
-                    title="Recommendation Score (0–100)",
-                    xaxis_range=[0, 110],
-                    yaxis={"categoryorder": "total ascending"},
-                    **_plotly_base(),
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-
-            show_cols = [c for c in ["symbol","sector","score","current_price","rsi","trend","momentum_20d","rationale"] if c in recs_df.columns]
-            st.dataframe(recs_df[show_cols], use_container_width=True, hide_index=True)
-
+        # ── Recommendation cards ───────────────────────────────────────────────
         st.divider()
-        st.subheader("Options Plays")
-        if opts is None or (hasattr(opts, "empty") and opts.empty):
-            st.caption("No options recommendations available.")
+        st.markdown("#### Top Stock Picks")
+        st.caption("Scored against your personal edge — the higher the score, the better the match to your winning trade patterns.")
+
+        if recs is None or (hasattr(recs, "empty") and recs.empty):
+            st.caption("No recommendations yet.")
         else:
+            recs_df = recs if hasattr(recs, "iterrows") else pd.DataFrame(recs)
+            n_recs = len(recs_df)
+            cols_per_row = 3
+            for row_start in range(0, n_recs, cols_per_row):
+                row_recs = list(recs_df.iloc[row_start: row_start + cols_per_row].iterrows())
+                cols = st.columns(cols_per_row)
+                for col, (_, rec_row) in zip(cols, row_recs):
+                    with col:
+                        _rec_card(rec_row, row_start)
+                        if st.button(f"Research {rec_row.get('symbol','')}", key=f"opp_res_{rec_row.get('symbol','')}_{row_start}", use_container_width=True):
+                            st.session_state.research_ticker = rec_row.get("symbol", "")
+
+        # ── Options plays ──────────────────────────────────────────────────────
+        opts = st.session_state.opts_recs
+        if opts is not None and not (hasattr(opts, "empty") and opts.empty) and len(opts) > 0:
+            st.divider()
+            st.markdown("#### Options Plays")
             opts_df = opts if hasattr(opts, "columns") else pd.DataFrame(opts)
             show_cols = [c for c in ["symbol","options_strategy","score","options_rationale"] if c in opts_df.columns]
             if show_cols:
                 st.dataframe(opts_df[show_cols], use_container_width=True, hide_index=True)
 
+        # ── Screener scatter ──────────────────────────────────────────────────
+        cands = st.session_state.candidates
+        if cands is not None and len(cands) > 0:
+            st.divider()
+            st.markdown("#### Market Map")
+            df = cands.copy()
+            if "rsi" in df.columns and "momentum_20d" in df.columns:
+                trend_colors = {
+                    "Strong Uptrend": GREEN, "Uptrend": "#66ddbb",
+                    "Sideways": AMBER, "Downtrend": "#ff8888", "Strong Downtrend": RED,
+                }
+                fig_sc = go.Figure()
+                for trend_val, group in df.groupby("trend") if "trend" in df.columns else [("All", df)]:
+                    color = trend_colors.get(str(trend_val), BLUE)
+                    fig_sc.add_trace(go.Scatter(
+                        x=group["rsi"], y=group["momentum_20d"],
+                        mode="markers+text",
+                        text=group["symbol"],
+                        textposition="top center",
+                        textfont=dict(size=10),
+                        marker=dict(
+                            size=group["volatility_20d"] / 2 if "volatility_20d" in group.columns else 12,
+                            color=color, opacity=0.85,
+                            line=dict(color="rgba(255,255,255,0.2)", width=1),
+                        ),
+                        name=str(trend_val),
+                        hovertemplate="<b>%{text}</b><br>RSI: %{x:.0f}<br>20d Mom: %{y:.1f}%<extra></extra>",
+                    ))
+                fig_sc.add_vline(x=50, line_dash="dot", line_color="rgba(255,255,255,0.2)")
+                fig_sc.add_hline(y=0, line_dash="dot", line_color="rgba(255,255,255,0.2)")
+                fig_sc.add_annotation(x=35, y=fig_sc.layout.yaxis.range[1] if fig_sc.layout.yaxis.range else 15,
+                                      text="Potential entries", showarrow=False, font=dict(color="#8892a4", size=10))
+                fig_sc.update_xaxes(title_text="RSI", **_axis_style(show_grid=False))
+                fig_sc.update_yaxes(title_text="20-Day Momentum (%)", **_axis_style(show_grid=True))
+                fig_sc.update_layout(
+                    **_base_layout(
+                        title="RSI vs Momentum  (bubble size = volatility, color = trend)",
+                        margin=dict(t=40, b=28, l=8, r=8),
+                    ),
+                )
+                st.plotly_chart(fig_sc, use_container_width=True, config={"displayModeBar": False})
 
-# ── TAB 5: AI Chat ────────────────────────────────────────────────────────────
-with tab_chat:
-    st.subheader("Ask Sodil Anything")
-    st.caption("Powered by Claude Opus — uses your portfolio & market tools automatically.")
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — AI ADVISOR
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_ai:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
     if not api_key:
-        st.warning("Enter your **Anthropic API Key** in the sidebar to use AI Chat.")
-        st.stop()
+        st.markdown("#### AI Advisor — Powered by Claude Opus")
+        st.warning("Add your **Anthropic API Key** in the sidebar to unlock the AI Advisor.")
+        with st.expander("What can the AI Advisor do?"):
+            st.markdown("""
+            - Analyze your complete trade history and identify your statistical edge
+            - Find stock opportunities tailored to YOUR winning patterns
+            - Explain why specific positions are up or down
+            - Give position sizing recommendations based on Kelly criterion
+            - Answer any question about your portfolio in plain English
+            """)
+    else:
+        st.markdown("#### AI Advisor")
+        st.caption("Ask anything. The AI knows your portfolio and trade history, and will pull live data automatically.")
 
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if msg.get("tools_used"):
-                st.caption(f"Tools: {', '.join(msg['tools_used'])}")
+        # ── Suggested questions ────────────────────────────────────────────────
+        if not st.session_state.chat_messages:
+            st.markdown("**Try asking:**")
+            cols = st.columns(3)
+            for i, q in enumerate(SUGGESTED_QUESTIONS):
+                with cols[i % 3]:
+                    if st.button(q, key=f"suggest_{i}", use_container_width=True):
+                        st.session_state._pending_question = q
+                        st.rerun()
 
-    if prompt := st.chat_input("What's my win rate in tech? Show me top opportunities..."):
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        st.session_state.chat_messages.append({"role": "user", "content": prompt})
-
-        with st.chat_message("assistant"):
-            with st.status("Working...", expanded=False) as status_box:
+        # Handle suggested question click
+        if hasattr(st.session_state, "_pending_question") and st.session_state._pending_question:
+            pending = st.session_state._pending_question
+            st.session_state._pending_question = None
+            st.session_state.chat_messages.append({"role": "user", "content": pending})
+            with st.spinner("Thinking..."):
                 try:
                     client = anthropic.Anthropic(api_key=api_key)
-                    response_text, tools_used = run_agent_turn(client, prompt)
-                    label = f"Used: {', '.join(tools_used)}" if tools_used else "Done"
-                    status_box.update(label=label, state="complete")
+                    resp_text, tools_used = run_agent_turn(client, pending)
                 except Exception as exc:
-                    response_text = f"Something went wrong: {exc}"
-                    tools_used = []
-                    status_box.update(label="Error", state="error")
-            st.markdown(response_text)
-            if tools_used:
-                st.caption(f"Tools: {', '.join(tools_used)}")
+                    resp_text, tools_used = f"Error: {exc}", []
+            st.session_state.chat_messages.append({"role": "assistant", "content": resp_text, "tools_used": tools_used})
 
-        st.session_state.chat_messages.append({
-            "role": "assistant",
-            "content": response_text,
-            "tools_used": tools_used,
-        })
+        # ── Message history ────────────────────────────────────────────────────
+        for msg in st.session_state.chat_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg.get("tools_used"):
+                    st.caption(f"Data sources: {', '.join(msg['tools_used'])}")
 
-    if st.session_state.chat_messages:
-        if st.button("Clear Chat"):
-            st.session_state.chat_messages = []
-            st.session_state.api_messages = []
-            st.rerun()
+        # ── Chat input ─────────────────────────────────────────────────────────
+        if prompt := st.chat_input("Ask about your portfolio, trades, or market opportunities..."):
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+
+            with st.chat_message("assistant"):
+                with st.status("Working...", expanded=False) as status_box:
+                    try:
+                        client = anthropic.Anthropic(api_key=api_key)
+                        resp_text, tools_used = run_agent_turn(client, prompt)
+                        label = f"Used: {', '.join(tools_used)}" if tools_used else "Done"
+                        status_box.update(label=label, state="complete")
+                    except Exception as exc:
+                        resp_text, tools_used = f"Something went wrong: {exc}", []
+                        status_box.update(label="Error", state="error")
+                st.markdown(resp_text)
+                if tools_used:
+                    st.caption(f"Data sources: {', '.join(tools_used)}")
+
+            st.session_state.chat_messages.append({
+                "role": "assistant", "content": resp_text, "tools_used": tools_used,
+            })
+
+        if st.session_state.chat_messages:
+            if st.button("Clear Chat", key="clear_chat_btn"):
+                st.session_state.chat_messages = []
+                st.session_state.api_messages = []
+                st.rerun()
