@@ -269,7 +269,14 @@ def main():
     parser.add_argument("--options",   action="store_true", help="Options recommendations only")
     parser.add_argument("--demo",      action="store_true", help="Run on demo data (no login)")
     parser.add_argument("--chat",      action="store_true", help="Conversational agent mode")
+    parser.add_argument("--dashboard", action="store_true", help="Launch web dashboard (same as python launch.py)")
     args = parser.parse_args()
+
+    if args.dashboard:
+        import subprocess
+        from pathlib import Path
+        subprocess.run([sys.executable, str(Path(__file__).parent / "launch.py")])
+        return
 
     if args.chat:
         from agent.chat import run_chat
