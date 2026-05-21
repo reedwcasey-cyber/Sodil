@@ -11,6 +11,8 @@ Usage:
   python main.py --recommend        # Recommendations only (stock)
   python main.py --options          # Options recommendations
   python main.py --demo             # Run on synthetic demo data (no login)
+  python main.py --chat             # Conversational agent (live)
+  python main.py --chat --demo      # Conversational agent on demo data
 """
 from __future__ import annotations
 
@@ -266,9 +268,13 @@ def main():
     parser.add_argument("--recommend", action="store_true", help="Stock recommendations only")
     parser.add_argument("--options",   action="store_true", help="Options recommendations only")
     parser.add_argument("--demo",      action="store_true", help="Run on demo data (no login)")
+    parser.add_argument("--chat",      action="store_true", help="Conversational agent mode")
     args = parser.parse_args()
 
-    if args.demo:
+    if args.chat:
+        from agent.chat import run_chat
+        run_chat(use_demo=args.demo)
+    elif args.demo:
         run_demo()
     elif args.portfolio:
         run_live("portfolio")
