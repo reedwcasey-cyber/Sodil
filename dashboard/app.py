@@ -1298,6 +1298,384 @@ def _rec_card(rec: pd.Series, col_idx: int) -> None:
             st.caption(rationale)
 
 
+# ── Baker Brothers helper functions ──────────────────────────────────────────
+def _baker_signal(score: float) -> tuple[str, str]:
+    """Return (label, css_class) signal for a composite score."""
+    if score >= 68: return "STRONG BUY", "sig-strong-buy"
+    if score >= 56: return "BUY", "sig-buy"
+    if score >= 44: return "HOLD", "sig-hold"
+    if score >= 32: return "WATCH", "sig-watch"
+    return "AVOID", "sig-avoid"
+
+
+def _baker_rank_class(rank: int) -> str:
+    if rank == 1: return "rank-1"
+    if rank == 2: return "rank-2"
+    if rank == 3: return "rank-3"
+    if rank <= 10: return "rank-other"
+    return "rank-low"
+
+
+def _baker_intel_card(item: dict, rank: int) -> None:
+    """Renders one ranked Intel card + action buttons."""
+    ticker = item["ticker"]
+    name = item.get("holding_name", ticker)
+    sector = item.get("sector", "")
+    weight_pct = item.get("weight_pct", 0.0)
+    catalyst = item.get("catalyst", "")
+    score = item.get("composite_score", 0.0)
+    signal, sig_cls = _baker_signal(score)
+    rank_cls = _baker_rank_class(rank)
+    score_color = (
+        CYAN if score >= 68 else GREEN if score >= 56
+        else AMBER if score >= 44 else "#ff8800" if score >= 32 else RED
+    )
+    p_profit = item.get("prob_profit", 0.0)
+    median_ret = item.get("median_return_pct", 0.0)
+    sharpe = item.get("sharpe", 0.0)
+    cur_price = item.get("current_price", 0.0)
+    ret_color = GREEN if median_ret >= 0 else RED
+    is_selected = st.session_state.get("baker_selected") == ticker
+    card_cls = "intel-card-active" if is_selected else "intel-card"
+    short_name = name if len(name) <= 22 else name[:20] + "…"
+    short_catalyst = catalyst if len(catalyst) <= 85 else catalyst[:82] + "…"
+    weight_bar_w = min(100, weight_pct / 9.5 * 100)
+    st.markdown(f"""
+<div class="{card_cls}">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+    <div class="rank-badge {rank_cls}">{rank}</div>
+    <div style="flex:1;min-width:0;">
+      <div class="intel-ticker">{ticker}</div>
+      <div class="intel-name" title="{name}">{short_name}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div class="intel-score-num" style="color:{score_color};">{score:.0f}</div>
+      <span class="intel-signal {sig_cls}">{signal}</span>
+    </div>
+  </div>
+  <div class="intel-bar-wrap">
+    <div class="intel-bar" style="width:{score:.0f}%;background:{score_color};"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;gap:4px;margin:8px 0;">
+    <div class="intel-mini-metric">
+      <div class="intel-mini-val" style="color:{GREEN};">{p_profit:.0f}%</div>
+      <div class="intel-mini-lbl">P(profit)</div>
+    </div>
+    <div class="intel-mini-metric">
+      <div class="intel-mini-val" style="color:{ret_color};">{median_ret:+.1f}%</div>
+      <div class="intel-mini-lbl">Exp. Return</div>
+    </div>
+    <div class="intel-mini-metric">
+      <div class="intel-mini-val" style="color:{'#00e5ff' if sharpe >= 0 else RED};">{sharpe:.2f}</div>
+      <div class="intel-mini-lbl">Sharpe</div>
+    </div>
+    <div class="intel-mini-metric">
+      <div class="intel-mini-val">${cur_price:,.2f}</div>
+      <div class="intel-mini-lbl">Price</div>
+    </div>
+  </div>
+  <div style="margin-bottom:6px;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+      <span style="font-size:0.6rem;color:#8892a4;text-transform:uppercase;letter-spacing:0.05em;">Baker Weight</span>
+      <span style="font-size:0.6rem;color:{CYAN};font-weight:700;">{weight_pct:.1f}%</span>
+    </div>
+    <div class="baker-weight-bar-track">
+      <div class="baker-weight-bar-fill" style="width:{weight_bar_w:.0f}%;"></div>
+    </div>
+  </div>
+  <div class="catalyst-strip" title="{catalyst}">{short_catalyst}</div>
+  <div style="font-size:0.62rem;color:#4488ff;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-top:6px;">{sector}</div>
+</div>
+""", unsafe_allow_html=True)
+    b1, b2 = st.columns(2)
+    with b1:
+        label = "📊 Close" if is_selected else "📊 Deep Dive"
+        if st.button(label, key=f"bkr_dd_{ticker}", use_container_width=True):
+            st.session_state.baker_selected = None if is_selected else ticker
+            st.rerun()
+    with b2:
+        if st.button("🔎 Research", key=f"bkr_res_{ticker}", use_container_width=True):
+            st.session_state.research_ticker = ticker
+
+
+def _baker_deep_dive(ticker: str, data: dict, baker_invest: float, horizon_label: str, baker_horizon: int) -> None:
+    """Full deep-dive analysis panel for one Baker Brothers holding."""
+    import html as _html
+    name = data.get("holding_name", ticker)
+    sector = data.get("sector", "")
+    weight_pct = data.get("weight_pct", 0.0)
+    catalyst = data.get("catalyst", "")
+    score = data.get("composite_score", 0.0)
+    signal, sig_cls = _baker_signal(score)
+    cur = data.get("current_price", 0.0)
+    hist_b = data.get("baker_hist")
+
+    st.markdown(f"""
+<div class="deep-dive-banner">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:5px;">
+        <span style="font-size:1.25rem;font-weight:900;color:{CYAN};">{ticker}</span>
+        <span style="font-size:0.82rem;color:#c8d0e0;">{name}</span>
+        <span class="intel-signal {sig_cls}">{signal}</span>
+      </div>
+      <div style="font-size:0.7rem;color:{CYAN};font-weight:600;margin-bottom:4px;">
+        {sector} &nbsp;·&nbsp; Baker Weight: {weight_pct:.1f}% of AUM
+      </div>
+      <div style="font-size:0.7rem;color:#8892a4;line-height:1.5;">{catalyst}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:1.5rem;font-weight:900;color:#fff;">${cur:,.2f}</div>
+      <div style="font-size:0.65rem;color:#8892a4;text-transform:uppercase;letter-spacing:0.06em;">Current Price</div>
+      <div style="font-size:0.8rem;font-weight:700;color:{CYAN};margin-top:2px;">Score {score:.0f} / 100</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # KPI rows
+    hurst_val = data.get("hurst", 0.5)
+    if hurst_val > 0.58: hurst_label = f"Trending ({hurst_val:.2f})"
+    elif hurst_val < 0.42: hurst_label = f"Mean-Rev ({hurst_val:.2f})"
+    else: hurst_label = f"Random ({hurst_val:.2f})"
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Hurst", hurst_label, help=data.get("regime_note", ""))
+    k2.metric("Sharpe", f"{data.get('sharpe', 0):.2f}", help="Risk-adj return vs 5% rf rate")
+    k3.metric("Sortino", f"{data.get('sortino', 0):.2f}", help="Downside-only risk ratio")
+    k4.metric("Ann. Volatility", f"{data.get('sigma_annual_pct', 0):.0f}%")
+    k5, k6, k7, k8 = st.columns(4)
+    k5.metric("VaR 95%", f"-{data.get('var_95_pct', 0):.1f}%", help="Max daily loss 19/20 days")
+    k6.metric("Entry Score", f"{data.get('entry_score', 0):.0f} / 100")
+    k7.metric("P(Profit)", f"{data.get('prob_profit', 0):.0f}%", help=f"Probability above current price in {horizon_label}")
+    k8.metric("Median Return", f"{data.get('median_return_pct', 0):+.1f}%", help="P50 of 3,000 Monte Carlo paths")
+
+    # Model assumptions strip
+    if hist_b is not None and not hist_b.empty:
+        n_days_used = len(hist_b.dropna())
+        n_yrs = n_days_used / 252.0
+        hist_w = min(0.60, n_yrs * 0.20)
+        capm_w = 1 - hist_w
+        st.markdown(f"""
+<div style="background:#040a14;border:1px solid rgba(0,229,255,0.08);border-radius:6px;
+            padding:8px 14px;margin-bottom:10px;display:flex;gap:18px;flex-wrap:wrap;
+            font-size:0.7rem;color:#8892a4;">
+  <span>📐 <b style="color:#c8d0e0;">Drift:</b>
+    {capm_w*100:.0f}% CAPM ({data.get('mu_capm_pct', 0):+.1f}%) +
+    {hist_w*100:.0f}% hist ({data.get('mu_historical_pct', 0):+.1f}%) =
+    <b style="color:{CYAN};">{data.get('mu_adjusted_pct', 0):+.1f}% adj.</b></span>
+  <span>📊 {n_days_used} trading days ({n_yrs:.1f} yr)</span>
+  <span>🎲 3,000 GBM + Jump Diffusion paths</span>
+  <span>📉 Returns: Median P50</span>
+</div>
+""", unsafe_allow_html=True)
+
+    st.divider()
+
+    # Charts
+    if hist_b is not None and not hist_b.empty:
+        ch_l, ch_r = st.columns([3, 2])
+        with ch_l:
+            st.markdown(f"##### Price Forecast — {ticker} · {horizon_label}")
+            close_col = "Close" if "Close" in hist_b.columns else hist_b.columns[3]
+            close_hist = hist_b[close_col].squeeze()
+            last_date = hist_b.index[-1]
+            future_dates = pd.bdate_range(start=last_date, periods=baker_horizon + 1)
+            pp = data.get("percentiles", {})
+            fig_bk = go.Figure()
+            fig_bk.add_trace(go.Scatter(
+                x=hist_b.index, y=close_hist,
+                line=dict(color="#c8d0e0", width=1.8), mode="lines", name="Historical",
+                hovertemplate="<b>%{x|%b %d '%y}</b> $%{y:,.2f}<extra></extra>",
+            ))
+            if pp:
+                fig_bk.add_trace(go.Scatter(
+                    x=list(future_dates) + list(future_dates[::-1]),
+                    y=list(pp[90]) + list(pp[10][::-1]),
+                    fill="toself", fillcolor="rgba(0,229,255,0.06)",
+                    line=dict(color="rgba(0,0,0,0)"), name="80% Range", hoverinfo="skip",
+                ))
+                fig_bk.add_trace(go.Scatter(
+                    x=list(future_dates) + list(future_dates[::-1]),
+                    y=list(pp[75]) + list(pp[25][::-1]),
+                    fill="toself", fillcolor="rgba(0,229,255,0.13)",
+                    line=dict(color="rgba(0,0,0,0)"), name="50% Range", hoverinfo="skip",
+                ))
+                fig_bk.add_trace(go.Scatter(
+                    x=future_dates, y=pp[50],
+                    line=dict(color=CYAN, width=2.5, dash="dash"),
+                    name="Median Forecast",
+                    hovertemplate="Forecast: $%{y:,.2f}<extra></extra>",
+                ))
+                fig_bk.add_trace(go.Scatter(
+                    x=future_dates, y=pp[90],
+                    line=dict(color="#66eeff", width=1, dash="dot"),
+                    name="Bull P90", hovertemplate="Bull: $%{y:,.2f}<extra></extra>",
+                ))
+                fig_bk.add_trace(go.Scatter(
+                    x=future_dates, y=pp[10],
+                    line=dict(color=RED, width=1, dash="dot"),
+                    name="Bear P10", hovertemplate="Bear: $%{y:,.2f}<extra></extra>",
+                ))
+            for lvl in data.get("support", []):
+                fig_bk.add_hline(y=lvl, line_color=GREEN, line_dash="dot", line_width=0.8, opacity=0.5,
+                                  annotation_text=f" S ${lvl:,.0f}", annotation_font=dict(size=9, color=GREEN))
+            for lvl in data.get("resistance", []):
+                fig_bk.add_hline(y=lvl, line_color=RED, line_dash="dot", line_width=0.8, opacity=0.5,
+                                  annotation_text=f" R ${lvl:,.0f}", annotation_font=dict(size=9, color=RED))
+            fig_bk.add_vline(
+                x=last_date.timestamp() * 1000, line_color=f"rgba(0,229,255,0.3)", line_dash="dash",
+                annotation_text=" Now", annotation_font=dict(size=10, color=CYAN),
+            )
+            sc = data.get("scenarios", {})
+            if sc and pp:
+                fig_bk.add_annotation(x=future_dates[-1], y=pp[90][-1], text=f"Bull ${sc.get('bull_price', 0):,.0f}",
+                    showarrow=False, font=dict(size=10, color="#66eeff"), xanchor="left")
+                fig_bk.add_annotation(x=future_dates[-1], y=pp[50][-1], text=f"Base ${sc.get('base_price', 0):,.0f}",
+                    showarrow=False, font=dict(size=10, color="#c8d0e0"), xanchor="left")
+                fig_bk.add_annotation(x=future_dates[-1], y=pp[10][-1], text=f"Bear ${sc.get('bear_price', 0):,.0f}",
+                    showarrow=False, font=dict(size=10, color=RED), xanchor="left")
+            fig_bk.update_xaxes(**_axis_style(show_grid=False))
+            fig_bk.update_yaxes(**_axis_style(show_grid=True), tickprefix="$")
+            fig_bk.update_layout(**_base_layout(margin=dict(t=16, b=8, l=8, r=80)))
+            st.plotly_chart(fig_bk, use_container_width=True, config={"displayModeBar": False})
+            # Scenario table
+            sc = data.get("scenarios", {})
+            if sc:
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Bear (P10)", f"${sc.get('bear_value', 0):,.0f}",
+                          f"{sc.get('bear_value', 0) - baker_invest:+,.0f} ({sc.get('bear_return', 0):+.1f}%)")
+                s2.metric("Expected (P50)", f"${sc.get('base_value', 0):,.0f}",
+                          f"{sc.get('base_value', 0) - baker_invest:+,.0f} ({sc.get('base_return', 0):+.1f}%)")
+                s3.metric("Bull (P90)", f"${sc.get('bull_value', 0):,.0f}",
+                          f"{sc.get('bull_value', 0) - baker_invest:+,.0f} ({sc.get('bull_return', 0):+.1f}%)")
+
+        with ch_r:
+            st.markdown("##### Return Distribution")
+            final_ret_pct = data.get("final_returns", np.array([])) * 100
+            if len(final_ret_pct) > 0:
+                fig_h2 = go.Figure()
+                pos_mask = final_ret_pct > 0
+                fig_h2.add_trace(go.Histogram(x=final_ret_pct[pos_mask], nbinsx=40,
+                    marker=dict(color=CYAN, line=dict(width=0)), opacity=0.8, name="Gain",
+                    hovertemplate="Return: %{x:.1f}%<br>Paths: %{y}<extra></extra>"))
+                fig_h2.add_trace(go.Histogram(x=final_ret_pct[~pos_mask], nbinsx=20,
+                    marker=dict(color=RED, line=dict(width=0)), opacity=0.8, name="Loss",
+                    hovertemplate="Return: %{x:.1f}%<br>Paths: %{y}<extra></extra>"))
+                fig_h2.update_layout(barmode="overlay")
+                for pct, lbl, clr in [(10, "P10", RED), (50, "P50", CYAN), (90, "P90", "#66eeff")]:
+                    val = float(np.percentile(final_ret_pct, pct))
+                    fig_h2.add_vline(x=val, line_color=clr, line_dash="dash", line_width=1.5,
+                        annotation_text=f" {lbl}: {val:+.1f}%", annotation_position="top",
+                        annotation_font=dict(size=9, color=clr))
+                fig_h2.add_vline(x=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+                fig_h2.update_xaxes(title_text="Return (%)", **_axis_style(show_grid=False))
+                fig_h2.update_yaxes(title_text="Paths", **_axis_style(show_grid=True))
+                fig_h2.update_layout(**_base_layout(margin=dict(t=16, b=8, l=8, r=8)))
+                st.plotly_chart(fig_h2, use_container_width=True, config={"displayModeBar": False})
+
+            st.markdown(f"""
+<div class="prob-panel" style="border-color:rgba(0,229,255,0.15);">
+  <div style="font-size:0.65rem;color:{CYAN};margin-bottom:10px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">Probability Breakdown</div>
+  <div class="prob-row"><span class="prob-label">Any profit</span><span class="prob-val" style="color:{GREEN};">{data.get('prob_profit', 0):.0f}%</span></div>
+  <div class="prob-row"><span class="prob-label">+10% or more</span><span class="prob-val" style="color:{GREEN};">{data.get('prob_10pct', 0):.0f}%</span></div>
+  <div class="prob-row"><span class="prob-label">+20% or more</span><span class="prob-val" style="color:{GREEN};">{data.get('prob_20pct', 0):.0f}%</span></div>
+  <div class="prob-row" style="margin-bottom:0;"><span class="prob-label">Loss &gt;20%</span><span class="prob-val" style="color:{RED};">{data.get('prob_loss_20', 0):.0f}%</span></div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Technical snapshot
+    st.divider()
+    st.markdown("##### Technical Signals")
+    t1, t2, t3, t4, t5 = st.columns(5)
+    t1.metric("RSI 14", f"{data.get('rsi', 50):.1f}", help="<30 oversold · >70 overbought")
+    t2.metric("Trend", data.get("trend", "—"))
+    t3.metric("MACD", "Bull ✓" if data.get("macd_bullish") else "Bear ✗")
+    t4.metric("20d Mom.", f"{data.get('momentum_20d', 0):+.1f}%")
+    t5.metric("Entry Score", f"{data.get('entry_score', 0):.0f} / 100")
+
+    # AI thesis
+    st.divider()
+    st.markdown("##### 🤖 Baker Intelligence Thesis")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    baker_ai_key = f"baker_ai_{ticker}"
+    if not api_key:
+        st.warning("Add your Anthropic API Key in the sidebar to unlock AI thesis.")
+    else:
+        if st.session_state.get(baker_ai_key) is None:
+            if st.button(f"Generate Baker Intel Thesis", type="primary", key=f"bkr_ai_btn_{ticker}"):
+                sc = data.get("scenarios", {})
+                prompt = f"""You are a senior analyst at Baker Brothers Investments — the world's leading biotech-focused hedge fund. Produce a direct, numbers-first investment thesis for {ticker} ({name}).
+
+BAKER BROTHERS CONTEXT:
+• Portfolio weight: {weight_pct:.1f}% of fund AUM
+• Primary catalyst: {catalyst}
+• Sector: {sector}
+• Intelligence signal: {signal} (composite score: {score:.0f}/100)
+
+QUANTITATIVE DATA:
+• Current Price: ${cur:,.2f} · Horizon: {horizon_label}
+• CAPM-Adjusted Drift: {data.get('mu_adjusted_pct', 0):+.1f}% annualized
+• Annual Volatility: {data.get('sigma_annual_pct', 0):.1f}%
+• Hurst Exponent: {data.get('hurst', 0.5):.3f} → {data.get('regime', 'Random Walk')} ({data.get('regime_note', '')})
+• Sharpe: {data.get('sharpe', 0):.2f} · Sortino: {data.get('sortino', 0):.2f}
+• Daily VaR 95%: -{data.get('var_95_pct', 0):.2f}%
+
+TECHNICAL: RSI {data.get('rsi', 50):.1f} · MACD {'Bullish' if data.get('macd_bullish') else 'Bearish'} · {data.get('trend', '—')} · 20d Mom {data.get('momentum_20d', 0):+.1f}%
+
+MONTE CARLO (3,000 paths, {horizon_label}):
+P(profit): {data.get('prob_profit', 0):.0f}% · P(+10%): {data.get('prob_10pct', 0):.0f}% · P(+20%): {data.get('prob_20pct', 0):.0f}% · P(loss>20%): {data.get('prob_loss_20', 0):.0f}%
+Median return: {data.get('median_return_pct', 0):+.1f}% · Bear P10: ${sc.get('bear_price', 0):,.0f} · Base P50: ${sc.get('base_price', 0):,.0f} · Bull P90: ${sc.get('bull_price', 0):,.0f}
+
+LEVELS: Support {', '.join(f'${s:,.0f}' for s in data.get('support', [])[:3]) or 'N/A'} · Resistance {', '.join(f'${r:,.0f}' for r in data.get('resistance', [])[:3]) or 'N/A'}
+
+Write exactly 5 sections:
+1. **VERDICT** — BUY/HOLD/AVOID + conviction level + one sentence reason
+2. **BAKER EDGE** — Why Baker holds this; what the quant signals confirm or challenge about their thesis
+3. **CATALYST TIMELINE** — Key binary events, data readouts, or milestones that will move this stock
+4. **RISK MANAGEMENT** — Stop-loss level, position sizing, tail risks
+5. **{horizon_label.upper()} TARGETS** — Specific price targets for bear/base/bull cases with reasoning
+
+Be specific. Use exact numbers. No disclaimers. Max 280 words."""
+                with st.spinner(f"Generating Baker Intel thesis for {ticker}..."):
+                    try:
+                        client = anthropic.Anthropic(api_key=api_key)
+                        ai_resp = client.messages.create(
+                            model=MODEL, max_tokens=700,
+                            messages=[{"role": "user", "content": prompt}],
+                        )
+                        st.session_state[baker_ai_key] = ai_resp.content[0].text
+                    except Exception as exc:
+                        st.session_state[baker_ai_key] = f"Analysis error: {exc}"
+                st.rerun()
+
+        ai_text = st.session_state.get(baker_ai_key)
+        if ai_text:
+            verdict_upper = ai_text[:200].upper()
+            if "BUY" in verdict_upper:
+                box_bg, box_border = "rgba(0,229,255,0.06)", "rgba(0,229,255,0.25)"
+            elif "AVOID" in verdict_upper:
+                box_bg, box_border = "rgba(255,85,102,0.07)", "rgba(255,85,102,0.25)"
+            else:
+                box_bg, box_border = "rgba(255,170,0,0.06)", "rgba(255,170,0,0.2)"
+            safe_text = _html.escape(ai_text).replace("\n", "<br>")
+            st.markdown(f"""
+<div class="thesis-box" style="background:{box_bg};border:1px solid {box_border};">
+{safe_text}
+</div>
+""", unsafe_allow_html=True)
+            if st.button("↺ Regenerate Thesis", key=f"bkr_regen_{ticker}"):
+                st.session_state[baker_ai_key] = None
+                st.rerun()
+        else:
+            st.markdown(f"""
+<div style="background:#080e1a;border:1px dashed rgba(0,229,255,0.2);
+            border-radius:12px;padding:18px;text-align:center;color:#8892a4;font-size:0.88rem;">
+  Click <strong style="color:{CYAN};">Generate Baker Intel Thesis</strong> for a structured Baker Brothers-context analysis
+</div>
+""", unsafe_allow_html=True)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TOP NAV / HEADER
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1364,12 +1742,13 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN TABS
 # ══════════════════════════════════════════════════════════════════════════════
-tab_home, tab_research, tab_trades, tab_opps, tab_lab, tab_ai = st.tabs([
+tab_home, tab_research, tab_trades, tab_opps, tab_lab, tab_baker, tab_ai = st.tabs([
     "🏠  Portfolio",
     "🔎  Research",
     "📊  My Trades",
     "🎯  Opportunities",
     "⚡  Quant Lab",
+    "🔬  Baker Intel",
     "🤖  AI Advisor",
 ])
 
@@ -1906,8 +2285,7 @@ with tab_lab:
             "Horizon", ["1 Month", "3 Months", "6 Months", "1 Year", "2 Years"],
             index=3, key="lab_horizon_sel",
         )
-        horizon_map = {"1 Month": 21, "3 Months": 63, "6 Months": 126, "1 Year": 252, "2 Years": 504}
-        lab_horizon = horizon_map[horizon_label]
+        lab_horizon = HORIZON_MAP[horizon_label]
     with col_btn:
         st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
         run_lab = st.button("🚀 Analyze", type="primary", use_container_width=True)
@@ -2395,7 +2773,265 @@ Be specific, use numbers, be direct. No disclaimers. Max 250 words total."""
                 """, unsafe_allow_html=True)
 
 
-# TAB 6 — AI ADVISOR
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — BAKER BROTHERS INTELLIGENCE COMMAND
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_baker:
+    baker_results = st.session_state.get("baker_results", {})
+    total_analyzed = len(baker_results)
+    top_pick = "—"
+    top_score = 0.0
+    strong_buy_ct = sum(1 for v in baker_results.values() if v.get("composite_score", 0) >= 68)
+    buy_ct = sum(1 for v in baker_results.values() if 56 <= v.get("composite_score", 0) < 68)
+    if total_analyzed > 0:
+        ranked_all = sorted(baker_results.items(), key=lambda x: x[1].get("composite_score", 0), reverse=True)
+        top_pick = ranked_all[0][0]
+        top_score = ranked_all[0][1].get("composite_score", 0)
+        avg_score = sum(v.get("composite_score", 0) for v in baker_results.values()) / total_analyzed
+    else:
+        avg_score = 0.0
+
+    # ── Command Header ─────────────────────────────────────────────────────────
+    scan_status = f"SCAN COMPLETE — {total_analyzed}/{len(BAKER_HOLDINGS)} holdings analyzed" if total_analyzed > 0 else "READY TO SCAN"
+    st.markdown(f"""
+<div class="baker-command-header">
+  <div>
+    <div style="font-size:0.6rem;font-weight:800;letter-spacing:0.15em;color:{CYAN};margin-bottom:3px;">
+      ◈ INTELLIGENCE COMMAND ◈ BAKER BROTHERS PORTFOLIO
+    </div>
+    <div style="font-size:1.35rem;font-weight:900;color:#fff;letter-spacing:-0.3px;">
+      Quantitative Portfolio Intelligence
+    </div>
+    <div style="font-size:0.75rem;color:#8892a4;margin-top:3px;">
+      {len(BAKER_HOLDINGS)} holdings · Monte Carlo GBM + Jump Diffusion · CAPM Bayesian drift ·
+      Hurst fractal analysis · Kelly sizing · VaR/CVaR
+    </div>
+  </div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <div class="bkr-kpi">
+      <div class="bkr-kpi-val">{total_analyzed}/{len(BAKER_HOLDINGS)}</div>
+      <div class="bkr-kpi-lbl">Analyzed</div>
+    </div>
+    <div class="bkr-kpi">
+      <div class="bkr-kpi-val" style="color:#ffd700;">{top_pick}</div>
+      <div class="bkr-kpi-lbl">Top Pick</div>
+    </div>
+    <div class="bkr-kpi">
+      <div class="bkr-kpi-val" style="color:{GREEN};">{strong_buy_ct}</div>
+      <div class="bkr-kpi-lbl">Strong Buy</div>
+    </div>
+    <div class="bkr-kpi">
+      <div class="bkr-kpi-val" style="color:{AMBER};">{avg_score:.0f}</div>
+      <div class="bkr-kpi-lbl">Avg Score</div>
+    </div>
+  </div>
+</div>
+<div style="font-size:0.62rem;color:rgba(0,229,255,0.5);text-align:right;margin-top:-10px;margin-bottom:12px;
+            letter-spacing:0.08em;">◆ {scan_status} ◆</div>
+""", unsafe_allow_html=True)
+
+    # ── Controls row ───────────────────────────────────────────────────────────
+    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([2, 2, 2, 1])
+    with ctrl1:
+        baker_hor_label = st.selectbox(
+            "Forecast Horizon",
+            list(HORIZON_MAP.keys()), index=3, key="baker_horizon_sel",
+        )
+        baker_horizon = HORIZON_MAP[baker_hor_label]
+    with ctrl2:
+        baker_invest = st.number_input(
+            "Investment per position ($)", min_value=1000, max_value=10_000_000,
+            value=st.session_state.baker_invest, step=1000, key="baker_invest_inp",
+        )
+        st.session_state.baker_invest = baker_invest
+    with ctrl3:
+        sector_opts = ["All Sectors"] + sorted({h["sector"] for h in BAKER_HOLDINGS})
+        baker_sector_filter = st.selectbox("Filter by Sector", sector_opts, key="baker_sector_filter")
+    with ctrl4:
+        st.markdown("<div style='margin-top:28px;'></div>", unsafe_allow_html=True)
+        run_baker_scan = st.button("⚡ Full Scan", type="primary", use_container_width=True)
+
+    # ── Run the scan ───────────────────────────────────────────────────────────
+    if run_baker_scan:
+        st.session_state.baker_results = {}
+        st.session_state.baker_selected = None
+        # Clear all cached AI theses
+        for h in BAKER_HOLDINGS:
+            st.session_state.pop(f"baker_ai_{h['ticker']}", None)
+
+        progress_bar = st.progress(0, text="Initializing intelligence scan…")
+        status_slot = st.empty()
+        from analytics.quant import run_full_analysis as _rfa
+
+        for i, holding in enumerate(BAKER_HOLDINGS):
+            tkr = holding["ticker"]
+            frac = i / len(BAKER_HOLDINGS)
+            progress_bar.progress(frac, text=f"◈ Scanning {tkr}  ({i + 1}/{len(BAKER_HOLDINGS)})  {holding['name']}")
+            status_slot.markdown(
+                f"<div style='font-size:0.7rem;color:{CYAN};text-align:center;letter-spacing:0.05em;'>"
+                f"⚡ ANALYZING {tkr} — {holding['catalyst'][:70]}…</div>",
+                unsafe_allow_html=True,
+            )
+            try:
+                hist_b, info_b = fetch_chart(tkr, "2y")
+                if hist_b.empty:
+                    hist_b, info_b = fetch_chart(tkr, "1y")
+                if hist_b.empty:
+                    continue
+                stock_beta = float(info_b.get("beta") or 1.0)
+                res = _rfa(hist=hist_b, investment=float(baker_invest),
+                           horizon_days=baker_horizon, n_paths=3000, beta=stock_beta)
+                if res:
+                    comp = baker_composite_score(res, holding["weight_pct"])
+                    st.session_state.baker_results[tkr] = {
+                        **res,
+                        "composite_score": comp,
+                        "weight_pct": holding["weight_pct"],
+                        "catalyst": holding["catalyst"],
+                        "sector": holding["sector"],
+                        "holding_name": holding["name"],
+                        "baker_hist": hist_b,
+                        "baker_info": info_b,
+                    }
+            except Exception:
+                pass
+
+        progress_bar.progress(1.0, text="◈ SCAN COMPLETE")
+        status_slot.empty()
+        st.rerun()
+
+    # ── Refresh results after potential rerun ──────────────────────────────────
+    baker_results = st.session_state.get("baker_results", {})
+
+    if not baker_results:
+        # Empty state
+        st.markdown(f"""
+<div style="background:#040a14;border:1px dashed rgba(0,229,255,0.2);border-radius:12px;
+            padding:32px 28px;margin:20px 0;text-align:center;">
+  <div style="font-size:2rem;margin-bottom:12px;">🔬</div>
+  <div style="font-size:1.1rem;font-weight:800;color:{CYAN};margin-bottom:8px;">
+    Intelligence Scan Ready
+  </div>
+  <div style="font-size:0.85rem;color:#8892a4;line-height:1.7;max-width:480px;margin:0 auto 20px;">
+    Click <strong style="color:#fff;">⚡ Full Scan</strong> to run the complete quantitative engine
+    across all {len(BAKER_HOLDINGS)} Baker Brothers holdings. Each stock gets:<br>
+    Monte Carlo 3,000-path simulation · CAPM drift calibration · Hurst fractal regime ·
+    Kelly sizing · VaR/CVaR · Entry score · AI thesis
+  </div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:16px;">
+""", unsafe_allow_html=True)
+        badges = "".join(
+            f'<span style="background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.2);'
+            f'border-radius:5px;padding:4px 10px;font-size:0.72rem;color:{CYAN};font-weight:700;">'
+            f'{h["ticker"]}</span>'
+            for h in BAKER_HOLDINGS
+        )
+        st.markdown(badges + "</div></div>", unsafe_allow_html=True)
+
+    else:
+        # ── Build ranked list ──────────────────────────────────────────────────
+        ranked_items = sorted(
+            [
+                {**h, **baker_results[h["ticker"]], "ticker": h["ticker"]}
+                for h in BAKER_HOLDINGS
+                if h["ticker"] in baker_results
+            ],
+            key=lambda x: x.get("composite_score", 0),
+            reverse=True,
+        )
+        if baker_sector_filter != "All Sectors":
+            ranked_items = [r for r in ranked_items if r.get("sector") == baker_sector_filter]
+
+        # ── Portfolio overview KPI strip ───────────────────────────────────────
+        st.markdown("#### Portfolio Intelligence Overview")
+        ov1, ov2, ov3, ov4, ov5, ov6 = st.columns(6)
+        ov1.metric("Holdings Scanned", f"{total_analyzed}/{len(BAKER_HOLDINGS)}")
+        ov2.metric("Strong Buy", strong_buy_ct, help="Composite score ≥ 68")
+        ov3.metric("Buy", buy_ct, help="Composite score 56–67")
+        ov4.metric("Top Pick", top_pick)
+        ov5.metric("Top Score", f"{top_score:.0f} / 100")
+        ov6.metric("Avg Score", f"{avg_score:.0f} / 100")
+
+        # ── Sector treemap ─────────────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### Sector Intelligence Map")
+        st.caption("Size = Baker conviction (portfolio weight) · Color = Composite opportunity score")
+        tmap_items = [r for r in ranked_items]
+        if tmap_items:
+            tmap_labels = [r["ticker"] for r in tmap_items]
+            tmap_parents = [r.get("sector", "") for r in tmap_items]
+            tmap_values = [r.get("weight_pct", 1.0) for r in tmap_items]
+            tmap_scores = [r.get("composite_score", 0) for r in tmap_items]
+            tmap_text = [
+                f"{r['ticker']}<br>{r.get('composite_score', 0):.0f} pts<br>{r.get('median_return_pct', 0):+.1f}%"
+                for r in tmap_items
+            ]
+            # Add sector parents
+            sector_set = list({r.get("sector", "") for r in tmap_items})
+            all_labels = sector_set + tmap_labels
+            all_parents = [""] * len(sector_set) + tmap_parents
+            all_values = [0.001] * len(sector_set) + tmap_values
+            all_colors = [50.0] * len(sector_set) + tmap_scores
+            all_text = sector_set + tmap_text
+
+            fig_tmap = go.Figure(go.Treemap(
+                labels=all_labels, parents=all_parents,
+                values=all_values, text=all_text,
+                textinfo="text",
+                marker=dict(
+                    colors=all_colors,
+                    colorscale=[[0, "#3a0010"], [0.3, "#7a2a00"], [0.55, "#665000"], [0.75, "#006655"], [1.0, "#00e5ff"]],
+                    cmin=20, cmax=80,
+                    colorbar=dict(
+                        title=dict(text="Score", font=dict(color="#8892a4", size=11)),
+                        tickfont=dict(color="#8892a4", size=10),
+                        thickness=12, len=0.8,
+                    ),
+                    line=dict(width=1.5, color="#0a0e1a"),
+                ),
+                hovertemplate="<b>%{label}</b><br>Score: %{color:.0f}<extra></extra>",
+            ))
+            fig_tmap.update_layout(
+                **_base_layout(margin=dict(t=8, b=8, l=8, r=8)),
+                height=260,
+            )
+            st.plotly_chart(fig_tmap, use_container_width=True, config={"displayModeBar": False})
+
+        # ── Ranked Intel Cards ─────────────────────────────────────────────────
+        st.divider()
+        n_shown = len(ranked_items)
+        st.markdown(f"#### Ranked Intelligence Feed  <span style='font-size:0.8rem;color:#8892a4;font-weight:400;'>— {n_shown} holdings</span>", unsafe_allow_html=True)
+        st.caption("Ranked by composite score · P(profit) 25% · Risk-adj return 20% · Entry quality 20% · Tail protection 15% · Baker conviction 10% · Hurst 10%")
+
+        global_rank = {r["ticker"]: i + 1 for i, r in enumerate(
+            sorted(
+                [{**h, **baker_results[h["ticker"]], "ticker": h["ticker"]}
+                 for h in BAKER_HOLDINGS if h["ticker"] in baker_results],
+                key=lambda x: x.get("composite_score", 0), reverse=True
+            )
+        )}
+
+        for row_start in range(0, len(ranked_items), 3):
+            row_slice = ranked_items[row_start: row_start + 3]
+            cols = st.columns(3)
+            for col, item in zip(cols, row_slice):
+                with col:
+                    _baker_intel_card(item, global_rank.get(item["ticker"], row_start + 1))
+
+        # ── Deep Dive Panel ────────────────────────────────────────────────────
+        selected_ticker = st.session_state.get("baker_selected")
+        if selected_ticker and selected_ticker in baker_results:
+            st.divider()
+            _baker_deep_dive(
+                ticker=selected_ticker,
+                data=baker_results[selected_ticker],
+                baker_invest=baker_invest,
+                horizon_label=baker_hor_label,
+                baker_horizon=baker_horizon,
+            )
+
+
+# TAB 7 — AI ADVISOR
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_ai:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
