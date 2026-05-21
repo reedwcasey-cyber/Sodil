@@ -2026,7 +2026,7 @@ with tab_research:
 
                     styled = (
                         display.style
-                        .applymap(_pnl_style, subset=["P&L $", "P&L %"])
+                        .map(_pnl_style, subset=["P&L $", "P&L %"])
                         .format({"Buy $": "${:,.2f}", "Sell $": "${:,.2f}", "P&L $": "${:,.0f}", "P&L %": "{:+.1f}%", "Qty": "{:.0f}"})
                     )
                     st.dataframe(styled, use_container_width=True, hide_index=True)
@@ -2195,7 +2195,7 @@ with tab_trades:
 
                 styled_log = (
                     log.style
-                    .applymap(_pnl_style2, subset=["P&L $","P&L %"])
+                    .map(_pnl_style2, subset=["P&L $","P&L %"])
                     .format({"Buy $":"${:,.2f}","Sell $":"${:,.2f}","P&L $":"${:,.0f}","P&L %":"{:+.1f}%"})
                 )
                 st.dataframe(styled_log, use_container_width=True, hide_index=True)
@@ -2462,7 +2462,6 @@ with tab_lab:
         st.caption("Historical price + Monte Carlo prediction cone (80% confidence interval). Green ▲ / Red ▼ = your historical trades.")
 
         # Build prediction chart
-        import pandas.tseries.offsets as offsets
         close_col = "Close" if "Close" in hist_lab.columns else hist_lab.columns[3]
         close_hist = hist_lab[close_col].squeeze()
 
