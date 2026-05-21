@@ -26,21 +26,29 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 
 
-# ── Hurst Exponent (R/S Analysis) ────────────────────────────────────────────
-def hurst_exponent(prices: np.ndarray, max_lag: int = 20) -> float:
+# ── Hurst Exponent (R/S Analysis on log-returns) ─────────────────────────────
+def hurst_exponent(prices: np.ndarray, max_lag: int = 50) -> float:
     """
     Fractal market hypothesis: measure trend persistence via R/S analysis.
+    Operates on log-returns (not raw prices) for stationarity and accuracy.
     H > 0.55 → trending (momentum works)
     H ~ 0.50 → random walk (GBM baseline)
     H < 0.45 → mean-reverting (buy dips, fade rallies)
     """
     prices = np.asarray(prices, dtype=float)
-    if len(prices) < 20:
+    if len(prices) < 30:
         return 0.5
-    lags = range(2, min(max_lag, len(prices) // 3))
+    # Use log-returns — removes non-stationarity of raw price series
+    log_ret = np.diff(np.log(prices))
+    if len(log_ret) < 20:
+        return 0.5
+    max_usable = min(max_lag, len(log_ret) // 4)
+    if max_usable < 4:
+        return 0.5
+    lags = range(4, max_usable)
     rs_vals = []
     for lag in lags:
-        chunks = [prices[i: i + lag] for i in range(0, len(prices) - lag, lag)]
+        chunks = [log_ret[i: i + lag] for i in range(0, len(log_ret) - lag, lag)]
         rs_sub = []
         for chunk in chunks:
             mean = chunk.mean()
@@ -51,7 +59,7 @@ def hurst_exponent(prices: np.ndarray, max_lag: int = 20) -> float:
             rs_sub.append((cumdev.max() - cumdev.min()) / std)
         if rs_sub:
             rs_vals.append(np.mean(rs_sub))
-    if len(rs_vals) < 2:
+    if len(rs_vals) < 3:
         return 0.5
     poly = np.polyfit(np.log(list(lags)[: len(rs_vals)]), np.log(rs_vals), 1)
     return float(np.clip(poly[0], 0.01, 0.99))
@@ -239,13 +247,17 @@ def run_full_analysis(
     current_price = float(close.iloc[-1])
 
     # ── Drift calibration ─────────────────────────────────────────────────────
-    mu_daily = float(returns.mean())
-    mu_annual = mu_daily * 252
+    # Use log returns for unbiased geometric return estimate
+    log_returns = np.log(1 + returns.clip(lower=-0.5, upper=5.0))
+    mu_log_daily = float(log_returns.mean())
+    mu_annual = mu_log_daily * 252  # geometric annualized return
 
-    # Momentum-adjusted drift: recent 20-day momentum tilts expectation
+    # 20-day momentum: annualize geometrically, cap at ±80%, weight lightly
     mom_20d = float(close.iloc[-1] / close.iloc[-20] - 1) if len(close) >= 20 else 0.0
-    # Partial momentum contribution (dampened to avoid overfitting)
-    mu_adjusted = mu_annual + 0.3 * (mom_20d * 252 / 20)
+    # Geometric annualization with hard cap — prevents noise from dominating
+    annual_mom = float(np.clip((1 + mom_20d) ** (252 / 20) - 1, -0.80, 2.0))
+    # Blend: 80% historical geometric drift + 20% recent momentum signal
+    mu_adjusted = 0.80 * mu_annual + 0.20 * annual_mom
 
     # ── Volatility ────────────────────────────────────────────────────────────
     sigma = adaptive_volatility(returns)
@@ -256,10 +268,11 @@ def run_full_analysis(
     # ── Risk ──────────────────────────────────────────────────────────────────
     risk_free = 0.05
     sharpe = (mu_annual - risk_free) / sigma if sigma > 0 else 0.0
-    neg_returns = returns[returns < 0]
-    sortino_denom = float(neg_returns.std() * np.sqrt(252)) if len(neg_returns) > 1 else sigma
+    # Sortino: downside deviation uses log returns for consistency
+    neg_log_rets = log_returns[log_returns < 0]
+    sortino_denom = float(neg_log_rets.std() * np.sqrt(252)) if len(neg_log_rets) > 1 else sigma
     sortino = (mu_annual - risk_free) / sortino_denom if sortino_denom > 0 else 0.0
-    daily_var, daily_cvar = var_cvar(returns.values)
+    daily_var, daily_cvar = var_cvar(log_returns.values)
 
     # ── Technicals ────────────────────────────────────────────────────────────
     delta = close.diff()

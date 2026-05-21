@@ -1671,17 +1671,25 @@ with tab_lab:
             final_ret_pct = res["final_returns"] * 100
 
             fig_hist = go.Figure()
+            # Two traces for proper green/red coloring (Plotly histogram doesn't support per-point colors)
+            pos_mask = final_ret_pct > 0
             fig_hist.add_trace(go.Histogram(
-                x=final_ret_pct,
-                nbinsx=60,
-                marker=dict(
-                    color=[GREEN if v > 0 else RED for v in final_ret_pct],
-                    line=dict(width=0),
-                ),
-                opacity=0.8,
-                name="Simulated Returns",
-                hovertemplate="Return: %{x:.1f}%<br>Count: %{y}<extra></extra>",
+                x=final_ret_pct[pos_mask],
+                nbinsx=40,
+                marker=dict(color=GREEN, line=dict(width=0)),
+                opacity=0.85,
+                name="Gain",
+                hovertemplate="Return: %{x:.1f}%<br>Paths: %{y}<extra></extra>",
             ))
+            fig_hist.add_trace(go.Histogram(
+                x=final_ret_pct[~pos_mask],
+                nbinsx=20,
+                marker=dict(color=RED, line=dict(width=0)),
+                opacity=0.85,
+                name="Loss",
+                hovertemplate="Return: %{x:.1f}%<br>Paths: %{y}<extra></extra>",
+            ))
+            fig_hist.update_layout(barmode="overlay")
 
             # Percentile markers
             for pct, label, color in [(10, "P10", RED), (50, "P50", "#fff"), (90, "P90", GREEN)]:
