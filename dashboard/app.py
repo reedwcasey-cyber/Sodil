@@ -2628,6 +2628,28 @@ with tab_lab:
     hist_lab = st.session_state.get("lab_hist")
     info_lab = st.session_state.get("lab_info", {}) or {}
 
+    # Backfill keys that older quant.py versions didn't return, so the UI
+    # works regardless of which cached module Streamlit Cloud has loaded.
+    if res is not None:
+        _mu = res.get("mu_annual_pct", 0)
+        res.setdefault("current_price", 0.0)
+        res.setdefault("median_return_pct", res.get("expected_return_pct", _mu))
+        res.setdefault("expected_return_pct", res.get("median_return_pct", _mu))
+        res.setdefault("mu_capm_pct", _mu)
+        res.setdefault("mu_historical_pct", _mu)
+        res.setdefault("mu_adjusted_pct", _mu)
+        res.setdefault("regime_note", res.get("regime", ""))
+        res.setdefault("prob_10pct", 0.0)
+        res.setdefault("prob_20pct", 0.0)
+        res.setdefault("prob_loss_20", 0.0)
+        res.setdefault("rsi", 50.0)
+        res.setdefault("macd_bullish", False)
+        res.setdefault("trend", "Unknown")
+        res.setdefault("momentum_20d", 0.0)
+        res.setdefault("bb_pct", 0.5)
+        res.setdefault("support", [])
+        res.setdefault("resistance", [])
+
     if res is None:
         st.info("Enter a ticker and click **Analyze** to run the full quantitative model.")
         with st.expander("What does this analyze?"):
