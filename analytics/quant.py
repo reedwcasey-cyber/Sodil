@@ -11,11 +11,13 @@ Models:
   - GARCH-inspired adaptive volatility
   - Kelly Criterion position sizing
   - Value at Risk + Conditional VaR (Expected Shortfall)
-  - Momentum-adjusted drift calibration
+  - CAPM + Bayesian shrinkage drift (beta-aware)
   - Bollinger Band + RSI + MACD signal fusion
   - Regime detection (trending / mean-reverting / random walk)
 """
 from __future__ import annotations
+
+__version__ = "1.2.0"  # CAPM beta-aware drift
 
 import warnings
 from typing import Optional
