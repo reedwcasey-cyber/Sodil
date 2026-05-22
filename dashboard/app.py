@@ -2600,13 +2600,21 @@ with tab_lab:
                     )
                 from analytics.quant import run_full_analysis
                 stock_beta = float(info_lab.get("beta") or 1.0)
-                results = run_full_analysis(
-                    hist=hist_lab,
-                    investment=float(lab_invest),
-                    horizon_days=lab_horizon,
-                    n_paths=3000,
-                    beta=stock_beta,
-                )
+                try:
+                    results = run_full_analysis(
+                        hist=hist_lab,
+                        investment=float(lab_invest),
+                        horizon_days=lab_horizon,
+                        n_paths=3000,
+                        beta=stock_beta,
+                    )
+                except TypeError:
+                    results = run_full_analysis(
+                        hist=hist_lab,
+                        investment=float(lab_invest),
+                        horizon_days=lab_horizon,
+                        n_paths=3000,
+                    )
                 if results:
                     st.session_state.lab_results = results
                     st.session_state.lab_hist = hist_lab
@@ -3182,8 +3190,12 @@ with tab_baker:
 
             try:
                 stock_beta = float(info_b.get("beta") or BAKER_PARAMS.get(tkr, (0, 0, 1.0))[2])
-                res = _rfa(hist=hist_b, investment=float(baker_invest),
-                           horizon_days=baker_horizon, n_paths=3000, beta=stock_beta)
+                try:
+                    res = _rfa(hist=hist_b, investment=float(baker_invest),
+                               horizon_days=baker_horizon, n_paths=3000, beta=stock_beta)
+                except TypeError:
+                    res = _rfa(hist=hist_b, investment=float(baker_invest),
+                               horizon_days=baker_horizon, n_paths=3000)
                 if res:
                     comp = baker_composite_score(res, holding["weight_pct"])
                     # Drop raw paths (5.8 MB each!) — store only derived stats.
